@@ -853,7 +853,7 @@ async function connectToWhatsApp() {
         auth: state,
         logger: pino({ level: 'fatal' }),
         printQRInTerminal: false,
-        browser: Browsers.windows('Desktop'),
+        browser: ['Ubuntu', 'Chrome', '1.0.0'],
         syncFullHistory: true,
         markOnlineOnConnect: false,
         generateHighQualityLinkPreview: false,
