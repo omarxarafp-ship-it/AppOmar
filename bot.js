@@ -99,11 +99,15 @@ const lidToPhoneMap = new Map();
 const VIP_PASSWORD = 'Omar';
 let botPresenceMode = 'unavailable'; // 'unavailable' or 'available'
 let presenceInterval = null;
+let keepAliveInterval = null;
 let pairingCodeRequested = false;
 let globalSock = null;
 let botImageBuffer = null;
 let xapkInstallerBuffer = null;
 let xapkInstallerInfo = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const BASE_RECONNECT_DELAY = 3000;
 
 function getRandomDelay(min = 1000, max = 3000) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -849,12 +853,14 @@ async function connectToWhatsApp() {
         auth: state,
         logger: pino({ level: 'fatal' }),
         printQRInTerminal: false,
-        browser: Browsers.macOS('Safari'),
-        syncFullHistory: false,
+        browser: Browsers.windows('Desktop'),
+        syncFullHistory: true,
         markOnlineOnConnect: false,
         generateHighQualityLinkPreview: false,
-        defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000,
+        defaultQueryTimeoutMs: 120000,
+        keepAliveIntervalMs: 20000,
+        connectTimeoutMs: 60000,
+        retryRequestDelayMs: 500,
         emitOwnEvents: false,
         printQRCode: false,
         shouldIgnoreJid: () => false,
@@ -884,31 +890,97 @@ async function connectToWhatsApp() {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error instanceof Boom) 
-                ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
-            console.log('❌ الاتصال تقطع');
-            if (shouldReconnect) {
+            const statusCode = (lastDisconnect?.error instanceof Boom) 
+                ? lastDisconnect.error.output.statusCode : 500;
+            
+            let shouldReconnect = true;
+            let reasonMsg = '';
+            
+            switch (statusCode) {
+                case DisconnectReason.loggedOut:
+                    shouldReconnect = false;
+                    reasonMsg = 'تسجيل الخروج - امسح الجلسة وسكان QR من جديد';
+                    break;
+                case DisconnectReason.connectionClosed:
+                    reasonMsg = 'الاتصال مسكر';
+                    break;
+                case DisconnectReason.connectionLost:
+                    reasonMsg = 'ضاع الاتصال';
+                    break;
+                case DisconnectReason.connectionReplaced:
+                    reasonMsg = 'الاتصال تعوض بجهاز آخر';
+                    shouldReconnect = false;
+                    break;
+                case DisconnectReason.timedOut:
+                    reasonMsg = 'انتهى الوقت';
+                    break;
+                case DisconnectReason.restartRequired:
+                    reasonMsg = 'خاص إعادة التشغيل';
+                    break;
+                case 428:
+                    reasonMsg = 'انتهت صلاحية الجلسة (24 ساعة)';
+                    break;
+                case 401:
+                    shouldReconnect = false;
+                    reasonMsg = 'غير مصرح - سكان QR من جديد';
+                    break;
+                case 403:
+                    shouldReconnect = false;
+                    reasonMsg = 'ممنوع - الحساب محظور';
+                    break;
+                case 515:
+                    reasonMsg = 'خاص إعادة التشغيل';
+                    break;
+                default:
+                    reasonMsg = `كود الخطأ: ${statusCode}`;
+            }
+            
+            console.log(`❌ الاتصال تقطع - ${reasonMsg}`);
+            
+            if (keepAliveInterval) {
+                clearInterval(keepAliveInterval);
+                keepAliveInterval = null;
+            }
+            if (presenceInterval) {
+                clearInterval(presenceInterval);
+                presenceInterval = null;
+            }
+            
+            if (shouldReconnect && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++;
+                const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts - 1), 60000);
+                console.log(`⏳ محاولة ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} - نعاود من بعد ${Math.round(delay/1000)} ثانية...`);
                 pairingCodeRequested = false;
-                const reconnectDelay = 3000;
-                console.log(`⏳ نعاود نحاول من بعد 3 ثانية...`);
-                setTimeout(() => connectToWhatsApp(), reconnectDelay);
+                setTimeout(() => connectToWhatsApp(), delay);
+            } else if (!shouldReconnect) {
+                console.log('🛑 ماغاديش نعاود الاتصال - ' + reasonMsg);
+                reconnectAttempts = 0;
+            } else {
+                console.log('🛑 وصلت للحد الأقصى ديال المحاولات. عاود تشغيل البوت يدوياً.');
+                reconnectAttempts = 0;
             }
         } else if (connection === 'open') {
+            reconnectAttempts = 0;
             console.log('✅ تّصلت بواتساب بنجاح!');
             console.log('🤖 بوت AppOmar واجد');
             console.log(`👨‍💻 نمرة المطور: ${DEVELOPER_PHONES.join(', ')}`);
             pairingCodeRequested = false;
             
-            // Set initial presence based on botPresenceMode
             try { await sock.sendPresenceUpdate(botPresenceMode); } catch {}
 
-            // Start periodic presence updates if in offline mode
-            if (botPresenceMode === 'unavailable') {
-                if (presenceInterval) clearInterval(presenceInterval);
-                presenceInterval = setInterval(async () => {
-                    try { await sock.sendPresenceUpdate('unavailable'); } catch {}
-                }, 30000); // Update every 30 seconds
-            }
+            if (presenceInterval) clearInterval(presenceInterval);
+            presenceInterval = setInterval(async () => {
+                try { await sock.sendPresenceUpdate(botPresenceMode); } catch {}
+            }, 25000);
+            
+            if (keepAliveInterval) clearInterval(keepAliveInterval);
+            keepAliveInterval = setInterval(async () => {
+                try {
+                    if (sock.user) {
+                        await sock.query({ tag: 'iq', attrs: { type: 'get', to: '@s.whatsapp.net' }, content: [{ tag: 'ping', attrs: {} }] });
+                    }
+                } catch {}
+            }, 30000);
 
             await new Promise(r => setTimeout(r, 1000));
             await setBotProfile(sock);
