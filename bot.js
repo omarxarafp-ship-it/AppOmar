@@ -97,12 +97,8 @@ const groupMetadataCache = new Map();
 const messageStore = new Map();
 const lidToPhoneMap = new Map();
 const VIP_PASSWORD = 'Omar';
-
-let pairingCodeRequested = false;
-let globalSock = null;
-let botImageBuffer = null;
-let xapkInstallerBuffer = null;
-let xapkInstallerInfo = null;
+let botPresenceMode = 'unavailable'; // 'unavailable' or 'available'
+let presenceInterval = null;
 
 function getRandomDelay(min = 1000, max = 3000) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -181,7 +177,7 @@ async function simulateTyping(sock, remoteJid, textLength = 50) {
 
 async function sendBotMessage(sock, remoteJid, content, originalMsg = null, options = {}) {
     await humanDelay();
-    
+
     const messageContent = { ...content };
 
     if (options.forward) {
@@ -649,9 +645,9 @@ async function handleZArchiverDownload(sock, remoteJid, userId, senderPhone, msg
 
         // تنزيل ZArchiver كـ APK مباشرة (فرض APK وليس XAPK)
         const API_URL = process.env.API_URL || 'http://localhost:8000';
-        
+
         console.log(`📥 كننزّل ZArchiver كـ APK...`);
-        
+
         // استخدام endpoint مخصص يفرض APK
         const { statusCode, headers, body } = await request(`${API_URL}/download/${ZARCHIVER_PACKAGE}`, {
             method: 'GET',
@@ -670,7 +666,7 @@ async function handleZArchiverDownload(sock, remoteJid, userId, senderPhone, msg
 
         const buffer = Buffer.concat(chunks);
         const fileSize = buffer.length;
-        
+
         // فرض نوع الملف كـ APK
         const fileType = 'apk';
         const filename = `ZArchiver.${fileType}`;
@@ -698,7 +694,7 @@ async function handleZArchiverDownload(sock, remoteJid, userId, senderPhone, msg
         }, msg, { forward: true });
 
         await sendBotMessage(sock, remoteJid, { 
-            text: ` تابعني ف انستاگرام:\n${INSTAGRAM_URL}${POWERED_BY}` 
+            text: ` تابعني ف Instagram :\n${INSTAGRAM_URL}${POWERED_BY}` 
         }, msg, { forward: true });
 
         session.state = 'waiting_for_search';
@@ -741,6 +737,14 @@ async function downloadAPKWithUndici(packageName, appTitle) {
             const source = headers['x-source'] || 'apkpure';
             const contentLength = parseInt(headers['content-length'] || '0');
 
+            // Check file size BEFORE downloading
+            if (contentLength > MAX_FILE_SIZE) {
+                console.log(`\n❌ الملف كبير بزاف: ${formatFileSize(contentLength)}`);
+                // Close the body stream without reading it
+                await body.dump();
+                throw new Error(`FILE_TOO_LARGE:${contentLength}`);
+            }
+
             const chunks = [];
             let downloadedBytes = 0;
             const startTime = Date.now();
@@ -774,6 +778,10 @@ async function downloadAPKWithUndici(packageName, appTitle) {
 
         } catch (error) {
             console.log(`\n   ❌ المحاولة ${attempt + 1} فشلات: ${error.message}`);
+            if (error.message.startsWith('FILE_TOO_LARGE')) {
+                // If file is too large, no need to retry
+                break;
+            }
             if (attempt < 2) {
                 await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
             }
@@ -885,7 +893,18 @@ async function connectToWhatsApp() {
             console.log('🤖 بوت AppOmar واجد');
             console.log(`👨‍💻 نمرة المطور: ${DEVELOPER_PHONES.join(', ')}`);
             pairingCodeRequested = false;
-            try { await sock.sendPresenceUpdate('unavailable'); } catch {}
+            
+            // Set initial presence based on botPresenceMode
+            try { await sock.sendPresenceUpdate(botPresenceMode); } catch {}
+
+            // Start periodic presence updates if in offline mode
+            if (botPresenceMode === 'unavailable') {
+                if (presenceInterval) clearInterval(presenceInterval);
+                presenceInterval = setInterval(async () => {
+                    try { await sock.sendPresenceUpdate('unavailable'); } catch {}
+                }, 30000); // Update every 30 seconds
+            }
+
             await new Promise(r => setTimeout(r, 1000));
             await setBotProfile(sock);
         } else if (connection === 'connecting') {
@@ -1135,9 +1154,17 @@ ${INSTAGRAM_URL}${POWERED_BY}`;
         }
 
         if (text === '/offline') {
-            try {
-                await sock.sendPresenceUpdate('unavailable');
+            botPresenceMode = 'unavailable';
+            try { 
+                await sock.sendPresenceUpdate(botPresenceMode); 
                 await sendBotMessage(sock, remoteJid, { text: `🔴 *البوت ولى Offline*\n\nدابا البوت مش متصل ظاهرياً${POWERED_BY}` }, msg);
+                
+                // Start periodic updates if not already running
+                if (!presenceInterval) {
+                    presenceInterval = setInterval(async () => {
+                        try { await sock.sendPresenceUpdate('unavailable'); } catch {}
+                    }, 30000); // Update every 30 seconds
+                }
             } catch (error) {
                 await sendBotMessage(sock, remoteJid, { text: `❌ مشكل فتغيير الحالة${POWERED_BY}` }, msg);
             }
@@ -1145,9 +1172,16 @@ ${INSTAGRAM_URL}${POWERED_BY}`;
         }
 
         if (text === '/online') {
-            try {
-                await sock.sendPresenceUpdate('available');
+            botPresenceMode = 'available';
+            try { 
+                await sock.sendPresenceUpdate(botPresenceMode); 
                 await sendBotMessage(sock, remoteJid, { text: `🟢 *البوت ولى Online*\n\nدابا البوت متصل${POWERED_BY}` }, msg);
+                
+                // Clear periodic updates
+                if (presenceInterval) {
+                    clearInterval(presenceInterval);
+                    presenceInterval = null;
+                }
             } catch (error) {
                 await sendBotMessage(sock, remoteJid, { text: `❌ مشكل فتغيير الحالة${POWERED_BY}` }, msg);
             }
@@ -1520,7 +1554,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
             }, msg, { forward: true });
 
             await sendBotMessage(sock, remoteJid, { 
-                text: ` تابعني ف انستاگرام:\n${INSTAGRAM_URL}${POWERED_BY}` 
+                text: ` تابعني ف Instagram :\n${INSTAGRAM_URL}${POWERED_BY}` 
             }, msg, { forward: true });
 
         } else {
@@ -1553,4 +1587,3 @@ connectToWhatsApp().catch(err => {
     console.error('❌ مشكل خطير:', err);
     process.exit(1);
 });
-
