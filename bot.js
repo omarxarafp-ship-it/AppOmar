@@ -50,7 +50,7 @@ const logger = pino({
 });
 
 const DEVELOPER_PHONES = ['212718938088', '234905250308102'];
-const BOT_PROFILE_IMAGE_URL = 'https://i.postimg.cc/TPgStdfc/Screenshot-2025-11-25-08-24-05-916-com-openai-chatgpt-edit.jpg';
+const BOT_PROFILE_IMAGE_URL = 'https://i.ibb.co/fYXc7sQx/Screenshot-2025-12-03-16-15-57-737-com-android-chrome-edit.jpg';
 const INSTAGRAM_URL = 'https://www.instagram.com/omarxarafp';
 const POWERED_BY = '\n\n> © من طرف AppOmar';
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
