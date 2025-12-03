@@ -99,6 +99,11 @@ const lidToPhoneMap = new Map();
 const VIP_PASSWORD = 'Omar';
 let botPresenceMode = 'unavailable'; // 'unavailable' or 'available'
 let presenceInterval = null;
+let pairingCodeRequested = false;
+let globalSock = null;
+let botImageBuffer = null;
+let xapkInstallerBuffer = null;
+let xapkInstallerInfo = null;
 
 function getRandomDelay(min = 1000, max = 3000) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -694,7 +699,7 @@ async function handleZArchiverDownload(sock, remoteJid, userId, senderPhone, msg
         }, msg, { forward: true });
 
         await sendBotMessage(sock, remoteJid, { 
-            text: ` تابعني ف Instagram :\n${INSTAGRAM_URL}${POWERED_BY}` 
+            text: ` تابعني ف انستاگرام:\n${INSTAGRAM_URL}${POWERED_BY}` 
         }, msg, { forward: true });
 
         session.state = 'waiting_for_search';
@@ -1554,7 +1559,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
             }, msg, { forward: true });
 
             await sendBotMessage(sock, remoteJid, { 
-                text: ` تابعني ف Instagram :\n${INSTAGRAM_URL}${POWERED_BY}` 
+                text: ` تابعني ف انستاگرام:\n${INSTAGRAM_URL}${POWERED_BY}` 
             }, msg, { forward: true });
 
         } else {
