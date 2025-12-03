@@ -24,3 +24,16 @@ psycopg2-binary
 python-multipart
 trafilatura
 uvicorn
+aiofiles
+aiohttp
+aria2p
+beautifulsoup4
+cloudscraper
+curl-cffi
+fastapi
+httpx
+lxml
+psycopg2-binary
+python-multipart
+trafilatura
+uvicorn

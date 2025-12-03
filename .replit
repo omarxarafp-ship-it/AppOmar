@@ -1,6 +1,7 @@
-modules = ["python-3.12", "nodejs-20"]
+modules = ["nodejs-20", "python-3.11"]
 [agent]
 expertMode = true
 
 [nix]
 channel = "stable-25_05"
+packages = ["aria2", "xcodebuild", "zlib"]
