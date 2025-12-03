@@ -606,55 +606,6 @@ function formatSearchResults(results) {
     return text;
 }
 
-async function downloadAPKWithUndici(packageName, appTitle) {
-    const API_URL = process.env.API_URL || 'http://localhost:8000';
-
-    console.log(`📥 كننزّل باستعمال Undici (أسرع 3x)...`);
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-            console.log(`   محاولة ${attempt + 1}/3...`);
-
-            const { statusCode, headers, body } = await request(`${API_URL}/download/${packageName}`, {
-                method: 'GET',
-                headersTimeout: 600000,
-                bodyTimeout: 600000
-            });
-
-            if (statusCode !== 200) throw new Error(`HTTP ${statusCode}`);
-
-            const fileType = headers['x-file-type'] || 'apk';
-            const source = headers['x-source'] || 'apkpure';
-            const contentLength = parseInt(headers['content-length'] || '0');
-
-            const chunks = [];
-            let downloadedBytes = 0;
-            const startTime = Date.now();
-
-            for await (const chunk of body) {
-                chunks.push(chunk);
-                downloadedBytes += chunk.length;
-                if (contentLength > 0) {
-                    const progress = ((downloadedBytes / contentLength) * 100).toFixed(0);
-                    process.stdout.write(`\r   ⬇️  ${(downloadedBytes / 1024 / 1024).toFixed(1)}MB / ${(contentLength / 1024 / 1024).toFixed(1)}MB (${progress}%)`);
-                } else {
-                    process.stdout.write(`\r   ⬇️  ${(downloadedBytes / 1024 / 1024).toFixed(1)}MB تم تحميله...`);
-                }
-            }
-
-            const buffer = Buffer.concat(chunks);
-            const fileSize = buffer.length;
-            const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
-            const speed = (fileSize / 1024 / 1024 / parseFloat(elapsedTime)).toFixed(2);
-
-            const safeTitle = appTitle.replace(/[^\w\s\u0600-\u06FF-]/g, '').trim();
-            const filename = `${safeTitle}.${fileType}`;
-
-            console.log(`\n✅ تّحمل من ${source}: ${formatFileSize(fileSize)} | السرعة: ${speed} MB/s`);
-
-            if (buffer.length > 100000) {
-
-
 async function handleZArchiverDownload(sock, remoteJid, userId, senderPhone, msg, session) {
     session.isDownloading = true;
     startDownloadTracking(senderPhone);
@@ -747,7 +698,7 @@ async function handleZArchiverDownload(sock, remoteJid, userId, senderPhone, msg
         }, msg, { forward: true });
 
         await sendBotMessage(sock, remoteJid, { 
-            text: ` تابعني ف Instagram :\n${INSTAGRAM_URL}${POWERED_BY}` 
+            text: ` تابعني ف انستاگرام:\n${INSTAGRAM_URL}${POWERED_BY}` 
         }, msg, { forward: true });
 
         session.state = 'waiting_for_search';
@@ -769,7 +720,54 @@ async function handleZArchiverDownload(sock, remoteJid, userId, senderPhone, msg
     }
 }
 
-                return { buffer, filename, size: fileSize, fileType };
+async function downloadAPKWithUndici(packageName, appTitle) {
+    const API_URL = process.env.API_URL || 'http://localhost:8000';
+
+    console.log(`📥 كننزّل باستعمال Undici (أسرع 3x)...`);
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            console.log(`   محاولة ${attempt + 1}/3...`);
+
+            const { statusCode, headers, body } = await request(`${API_URL}/download/${packageName}`, {
+                method: 'GET',
+                headersTimeout: 600000,
+                bodyTimeout: 600000
+            });
+
+            if (statusCode !== 200) throw new Error(`HTTP ${statusCode}`);
+
+            const fileType = headers['x-file-type'] || 'apk';
+            const source = headers['x-source'] || 'apkpure';
+            const contentLength = parseInt(headers['content-length'] || '0');
+
+            const chunks = [];
+            let downloadedBytes = 0;
+            const startTime = Date.now();
+
+            for await (const chunk of body) {
+                chunks.push(chunk);
+                downloadedBytes += chunk.length;
+                if (contentLength > 0) {
+                    const progress = ((downloadedBytes / contentLength) * 100).toFixed(0);
+                    process.stdout.write(`\r   ⬇️  ${(downloadedBytes / 1024 / 1024).toFixed(1)}MB / ${(contentLength / 1024 / 1024).toFixed(1)}MB (${progress}%)`);
+                } else {
+                    process.stdout.write(`\r   ⬇️  ${(downloadedBytes / 1024 / 1024).toFixed(1)}MB تم تحميله...`);
+                }
+            }
+
+            const buffer = Buffer.concat(chunks);
+            const fileSize = buffer.length;
+            const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
+            const speed = (fileSize / 1024 / 1024 / parseFloat(elapsedTime)).toFixed(2);
+
+            const safeTitle = appTitle.replace(/[^\w\s\u0600-\u06FF-]/g, '').trim();
+            const filename = `${safeTitle}.${fileType}`;
+
+            console.log(`\n✅ تّحمل من ${source}: ${formatFileSize(fileSize)} | السرعة: ${speed} MB/s`);
+
+            if (buffer.length > 100000) {
+    return { buffer, filename, size: fileSize, fileType };
             }
 
             throw new Error('الملف المحمل صغير بزاف');
@@ -927,7 +925,7 @@ async function connectToWhatsApp() {
                     await sock.rejectCall(call.id, call.from);
                     await blockUser(callerPhone, 'بلوك أوتوماتيكي بسبب المكالمة', sock);
                     await sendBotMessage(sock, call.from, {
-                        text: `⛔ *تحبست نهائياً*\n\nالمكالمات ممنوعة.\n\nباش تتكلم مع المطور على إنستجرام  بالمطور:\n${INSTAGRAM_URL}${POWERED_BY}`
+                        text: `⛔ *تحبست نهائياً*\n\nالمكالمات ممنوعة.\n\nباش تتاصل بالمطور:\n${INSTAGRAM_URL}${POWERED_BY}`
                     });
                 } catch (error) {
                     console.error('❌ مشكل فرفض المكالمة:', error.message);
@@ -970,7 +968,7 @@ async function connectToWhatsApp() {
                 return;
             }
             await sendBotMessage(sock, remoteJid, { 
-                text: `⏳ صبر شوية، غانرسل ليك التطبيق...${POWERED_BY}`
+                text: `⏳ شوية صبر، غانرسل ليك التطبيق...${POWERED_BY}`
             }, msg);
             return;
         }
@@ -980,7 +978,7 @@ async function connectToWhatsApp() {
             if (hourlyStatus === 'block') {
                 await blockUser(senderPhone, 'بلوك بسبب تجاوز حد الرسائل (25/ساعة)', sock);
                 await sendBotMessage(sock, remoteJid, { 
-                    text: `⛔ *تحظرّت نهائياً*\n\n❌ رسائل كثيرة فالساعة\n📊 الحد: 25 رسالة فالساعة\n\nإلى بغيتي توضح راسك، تكلم مع المطور على انستجرام  بالمطور${POWERED_BY}`
+                    text: `⛔ *تحظرّت نهائياً*\n\n❌ رسائل كثيرة فالساعة\n📊 الحد: 25 رسالة فالساعة\n\nإلى بغيتي توضح راسك، تاصل بالمطور${POWERED_BY}`
                 }, msg);
                 return;
             }
@@ -1062,7 +1060,7 @@ async function handleMessage(sock, remoteJid, userId, senderPhone, text, msg, us
 ◄ السبيام = بلوك نهائي
 
 ملاحظة:
-باش تحصل على تنزيلات لامحدودة تكلم مع المطور على انستجرام  بالمطور وخد كود VIP
+باش تحصل على تنزيلات لامحدودة تاصل بالمطور وخد كود VIP
 
 ${INSTAGRAM_URL}${POWERED_BY}`;
 
@@ -1522,7 +1520,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
             }, msg, { forward: true });
 
             await sendBotMessage(sock, remoteJid, { 
-                text: ` تابعني ف Instagram :\n${INSTAGRAM_URL}${POWERED_BY}` 
+                text: ` تابعني ف انستاگرام:\n${INSTAGRAM_URL}${POWERED_BY}` 
             }, msg, { forward: true });
 
         } else {
