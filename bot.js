@@ -64,7 +64,9 @@ function getZArchiverTutorial(fileName) {
 2️⃣ غادي تشوف الملفات ديال التطبيق - رجع للوراء
 3️⃣ غادي تلقى التطبيق بالاسم "${appName}"
 4️⃣ ضغط عليه مطولا  غادي يبان Install أو تثبيت
-5️⃣ مبروك! شكراً لأنك كتستعمل AppOmar`;
+5️⃣ مبروك! شكراً لأنك كتستعمل AppOmar
+
+> إلا ماعندكش Zarchiverكتب Zarchiverوالبوت غادي يعطيك التطبيق باش تبث ملفات Xapk بدون مشكلة `;
 }
 
 const ZARCHIVER_TUTORIAL_BASIC = `*طريقة تثبيت XAPK:*
@@ -75,7 +77,9 @@ const ZARCHIVER_TUTORIAL_BASIC = `*طريقة تثبيت XAPK:*
 4️⃣ ضغط عليه مطولا  غادي يبان Install أو تثبيت
 5️⃣ مبروك! شكراً لأنك كتستعمل AppOmar
 
-باش تنزّل ZArchiver صيفط: zarchiver`;
+إلا ماعندكش Zarchiverكتب Zarchiverوالبوت غادي يعطيك التطبيق باش تبث ملفات Xapk بدون مشكل
+
+باش تنزل  ZArchiver صيفط: zarchiver`;
 
 let pool = null;
 let dbEnabled = false;
@@ -1219,7 +1223,7 @@ ${INSTAGRAM_URL}${POWERED_BY}`;
         if (text.startsWith('/unblock ')) {
             const numberToUnblock = text.replace('/unblock ', '').trim();
             const success = await unblockUser(numberToUnblock, sock);
-            await sendBotMessage(sock, remoteJid, { text: success ? `✅ تحيّد البلوك على ${numberToUnblock}${POWERED_BY}` : `❌ ماقدّيتش نحيد البلوك${POWERED_BY}` }, msg);
+            await sendBotMessage(sock, remoteJid, { text: success ? `✅ تحيّد البلوك على ${numberToUnblock}${POWERED_BY}` : `❌ ماقديتش  نحيد البلوك${POWERED_BY}` }, msg);
             return;
         }
 
@@ -1334,7 +1338,7 @@ zarchiver - باش تثبت XAPK
 /info • معلومات
 /dev • المطور
 /cancel • إلغاء البحث
-zarchiver • تنزّل زارشيفر
+zarchiver • تنزل  زارشيفر
 
 أمثلة:
 WhatsApp, Minecraft, Free Fire${POWERED_BY}`;
@@ -1411,7 +1415,7 @@ AppOmar Bot v3.0
 
 ماعنديش نتائج على "${text}"
 
-💡 جرّب تكتب بالانجليزية${POWERED_BY}`
+💡 جرب  تكتب بالانجليزية${POWERED_BY}`
                 }, msg);
                 return;
             }
@@ -1599,7 +1603,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
 ◄ حجم التطبيق: ${formatFileSize(apkStream.size)}
 ◄ الحد: 2 GB
 
-💡 جرب ابليكاسيون آخر${POWERED_BY}`
+💡 جرب تطبيق  آخر${POWERED_BY}`
                 }, msg);
                 session.state = 'waiting_for_search';
                 session.isDownloading = false;
@@ -1635,7 +1639,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
             }, msg, { forward: true });
 
         } else {
-            await sendBotMessage(sock, remoteJid, { text: `❌ ماقدّيتش نحمل. جرّب ابليكاسيون آخر.${POWERED_BY}` }, msg);
+            await sendBotMessage(sock, remoteJid, { text: `❌ ماقديتش  نحمل. جرب  تطبيق  آخر.${POWERED_BY}` }, msg);
         }
 
         session.state = 'waiting_for_search';
