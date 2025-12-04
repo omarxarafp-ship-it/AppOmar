@@ -184,8 +184,8 @@ function getZipObbTutorial(fileName, packageId) {
    - اختار "Install" أو "تثبيت"
 
 4️⃣ *نقل ملفات OBB:*
-   - انسخ المجمد ب اسم  ${packageId}
-   - ضغط مطول على ملف OBB
+   - انسخ المجلد ب اسم  ${packageId}
+   - ضغط مطول على ملف ${packageId}
    - اختار "نسخ" أو "Copy"
    - روح لـ: Android/obb/ 
    - لصق الملف هنا
