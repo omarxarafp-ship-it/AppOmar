@@ -1695,21 +1695,75 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
             const isXapk = apkStream.fileType === 'xapk';
             await logDownload(senderPhone, appDetails.appId, appDetails.title, apkStream.fileType, apkStream.size);
 
-            let caption = formatAppInfo(appDetails, apkStream.fileType, apkStream.size);
-            caption += `\n◄ اسم الملف: ${apkStream.filename}`;
-
             if (isXapk) {
-                caption += `\n\n${getZArchiverTutorial(apkStream.filename)}`;
+                const xapkAnalysis = analyzeXapkContents(apkStream.buffer);
+                
+                if (xapkAnalysis.hasApkPlusObb && xapkAnalysis.apkFile && xapkAnalysis.obbFiles.length > 0) {
+                    console.log(`📦 XAPK يحتوي على APK + OBB - سيتم إرسالهم منفصلين`);
+                    
+                    const safeTitle = appDetails.title.replace(/[^\w\s\u0600-\u06FF-]/g, '').trim();
+                    
+                    let apkCaption = formatAppInfo(appDetails, 'apk', xapkAnalysis.apkFile.size);
+                    apkCaption += `\n◄ اسم الملف: ${safeTitle}.apk`;
+                    apkCaption += `\n\n*📱 ملف APK - ثبته أولاً*`;
+                    apkCaption += POWERED_BY;
+                    
+                    await sendBotMessage(sock, remoteJid, {
+                        document: xapkAnalysis.apkFile.buffer,
+                        mimetype: 'application/vnd.android.package-archive',
+                        fileName: `${safeTitle}.apk`,
+                        caption: apkCaption
+                    }, msg, { forward: true });
+                    
+                    for (let i = 0; i < xapkAnalysis.obbFiles.length; i++) {
+                        const obbFile = xapkAnalysis.obbFiles[i];
+                        const obbFileName = obbFile.name.includes('/') ? obbFile.name.split('/').pop() : obbFile.name;
+                        
+                        let obbCaption = `*📦 ملف OBB ${xapkAnalysis.obbFiles.length > 1 ? `(${i + 1}/${xapkAnalysis.obbFiles.length})` : ''}*`;
+                        obbCaption += `\n◄ الحجم: ${formatFileSize(obbFile.size)}`;
+                        obbCaption += `\n◄ اسم الملف: ${obbFileName}`;
+                        obbCaption += `\n\n*طريقة التثبيت:*`;
+                        obbCaption += `\n1️⃣ ثبّت APK أولاً (الملف السابق)`;
+                        obbCaption += `\n2️⃣ انسخ ملف OBB إلى:`;
+                        obbCaption += `\n   📁 Android/obb/${appDetails.appId}/`;
+                        obbCaption += `\n3️⃣ افتح التطبيق واستمتع!`;
+                        obbCaption += POWERED_BY;
+                        
+                        await sendBotMessage(sock, remoteJid, {
+                            document: obbFile.buffer,
+                            mimetype: 'application/octet-stream',
+                            fileName: obbFileName,
+                            caption: obbCaption
+                        }, msg, { forward: true });
+                    }
+                    
+                } else {
+                    console.log(`📦 XAPK يحتوي على Split APKs - سيتم إرساله كـ XAPK`);
+                    
+                    let caption = formatAppInfo(appDetails, apkStream.fileType, apkStream.size);
+                    caption += `\n◄ اسم الملف: ${apkStream.filename}`;
+                    caption += `\n\n${getZArchiverTutorial(apkStream.filename)}`;
+                    caption += POWERED_BY;
+
+                    await sendBotMessage(sock, remoteJid, {
+                        document: apkStream.buffer,
+                        mimetype: 'application/octet-stream',
+                        fileName: apkStream.filename,
+                        caption: caption
+                    }, msg, { forward: true });
+                }
+            } else {
+                let caption = formatAppInfo(appDetails, apkStream.fileType, apkStream.size);
+                caption += `\n◄ اسم الملف: ${apkStream.filename}`;
+                caption += POWERED_BY;
+
+                await sendBotMessage(sock, remoteJid, {
+                    document: apkStream.buffer,
+                    mimetype: 'application/vnd.android.package-archive',
+                    fileName: apkStream.filename,
+                    caption: caption
+                }, msg, { forward: true });
             }
-
-            caption += POWERED_BY;
-
-            await sendBotMessage(sock, remoteJid, {
-                document: apkStream.buffer,
-                mimetype: isXapk ? 'application/octet-stream' : 'application/vnd.android.package-archive',
-                fileName: apkStream.filename,
-                caption: caption
-            }, msg, { forward: true });
 
             await sendBotMessage(sock, remoteJid, { 
                 text: ` تابعني ف انستاگرام:\n${INSTAGRAM_URL}${POWERED_BY}` 
