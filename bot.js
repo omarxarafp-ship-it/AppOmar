@@ -630,7 +630,7 @@ function checkHourlySpam(phone) {
     }
     tracker.messages = tracker.messages.filter(t => now - t < oneHour);
     tracker.messages.push(now);
-    if (tracker.messages.length > 25) {
+    if (tracker.messages.length > 20) {
         return 'block';
     }
     return 'ok';
@@ -641,7 +641,7 @@ function checkDownloadSpam(phone) {
     if (vipUsers.has(phone)) return 'ok';
     let tracker = downloadMessageTracker.get(phone);
     if (!tracker) return 'ok';
-    if (tracker.count >= 5) {
+    if (tracker.count >= 3) {
         return 'block';
     }
     tracker.count++;
@@ -1223,9 +1223,9 @@ async function connectToWhatsApp() {
         if (!isAdmin) {
             const hourlyStatus = checkHourlySpam(senderPhone);
             if (hourlyStatus === 'block') {
-                await blockUser(senderPhone, 'بلوك بسبب تجاوز حد الرسائل (25/ساعة)', sock);
+                await blockUser(senderPhone, 'بلوك بسبب تجاوز حد الرسائل (20/ساعة)', sock);
                 await sendBotMessage(sock, remoteJid, { 
-                    text: `⛔ *تحظرّت نهائياً*\n\n❌ رسائل كثيرة فالساعة\n📊 الحد: 25 رسالة فالساعة\n\nإلى بغيتي توضح راسك، تاصل بالمطور${POWERED_BY}`
+                    text: `⛔ *تحظرّت نهائياً*\n\n❌ رسائل كثيرة فالساعة\n📊 الحد: 20 رسالة فالساعة\n\nإلى بغيتي توضح راسك، تاصل بالمطور${POWERED_BY}`
                 }, msg);
                 return;
             }
@@ -1301,8 +1301,8 @@ async function handleMessage(sock, remoteJid, userId, senderPhone, text, msg, us
 3️⃣ وتسنى التحميل والإرسال
 
 قواعد الحماية:
-◄ ماشي كثر من 25 رسالة فالساعة
-◄ ماشي كثر من 10 تنزيلات متتابعات
+◄ ماشي كثر من 20 رسالة فالساعة
+◄ ماشي كثر من 3 تحميلات متتابعة
 ◄ المكالمات = بلوك أوتوماتيكي
 ◄ السبيام = بلوك نهائي
 
