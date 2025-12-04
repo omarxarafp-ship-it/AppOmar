@@ -1721,12 +1721,12 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
                         
                         let obbCaption = `*📦 ملف OBB ${xapkAnalysis.obbFiles.length > 1 ? `(${i + 1}/${xapkAnalysis.obbFiles.length})` : ''}*`;
                         obbCaption += `\n◄ الحجم: ${formatFileSize(obbFile.size)}`;
-                        obbCaption += `\n◄ اسم الملف: ${obbFileName}`;
                         obbCaption += `\n\n*طريقة التثبيت:*`;
-                        obbCaption += `\n1️⃣ ثبّت APK أولاً (الملف السابق)`;
+                        obbCaption += `\n1️⃣ ثبّت APK أولاً`;
                         obbCaption += `\n2️⃣ انسخ ملف OBB إلى:`;
                         obbCaption += `\n   📁 Android/obb/${appDetails.appId}/`;
                         obbCaption += `\n3️⃣ افتح التطبيق واستمتع!`;
+                        obbCaption += `\n\n⚠️ *لا تغير اسم الملف!*`;
                         obbCaption += POWERED_BY;
                         
                         await sendBotMessage(sock, remoteJid, {
