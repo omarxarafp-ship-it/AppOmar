@@ -163,7 +163,7 @@ const logger = pino({
 
 const DEVELOPER_PHONES = ['212718938088', '234905250308102'];
 const BOT_PROFILE_IMAGE_URL = 'https://i.ibb.co/fYXc7sQx/Screenshot-2025-12-03-16-15-57-737-com-android-chrome-edit.jpg';
-const INSTAGRAM_URL = 'https://www.instagram.com/omarxarafp';
+const INSTAGRAM_URL = 'https://www.instagram.com/omarxarafp \n\n رابط القناة \n https://whatsapp.com/channel/0029VbBUsqSEVccOQaMEtm0n';
 const POWERED_BY = '\n\n> © من طرف AppOmar';
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
 
