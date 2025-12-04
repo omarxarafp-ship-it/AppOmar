@@ -244,8 +244,6 @@ const groupMetadataCache = new Map();
 const messageStore = new Map();
 const lidToPhoneMap = new Map();
 const VIP_PASSWORD = 'Omar';
-const BOT_PASSWORD = 'Omar18';
-const authenticatedUsers = new Set();
 
 const USER_LIMITS = {
     authenticated: {
@@ -276,12 +274,9 @@ function getRandomDelay(min = 1000, max = 3000) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function isAuthenticated(phone) {
-    return authenticatedUsers.has(phone) || isDeveloper(phone);
-}
 
 function getUserLimits(phone) {
-    if (isAuthenticated(phone) || isDeveloper(phone)) {
+    if (isDeveloper(phone)) {
         return USER_LIMITS.authenticated;
     }
     return USER_LIMITS.unauthenticated;
@@ -468,6 +463,8 @@ async function notifyDeveloperNewUser(sock, userInfo, firstMessage) {
             return;
         }
 
+        console.log(`📤 كنحاول نبلغ المطورين عن مستخدم جديد: ${userInfo.phone}`);
+
         const now = new Date();
         const dateStr = now.toLocaleString('ar-EG', { 
             timeZone: 'Africa/Casablanca',
@@ -487,9 +484,12 @@ async function notifyDeveloperNewUser(sock, userInfo, firstMessage) {
 💬 أول رسالة: ${safeFirstMessage}
 🕐 الوقت: ${dateStr}`;
 
+        let successCount = 0;
         for (const devPhone of DEVELOPER_PHONES) {
             try {
                 const devJid = `${devPhone}@s.whatsapp.net`;
+                console.log(`📨 كنصيفط إبلاغ لـ: ${devPhone}`);
+                
                 if (userInfo.profilePic) {
                     await sock.sendMessage(devJid, {
                         image: userInfo.profilePic,
@@ -498,11 +498,18 @@ async function notifyDeveloperNewUser(sock, userInfo, firstMessage) {
                 } else {
                     await sock.sendMessage(devJid, { text: notifyText });
                 }
+                successCount++;
+                console.log(`✅ تم إرسال الإبلاغ لـ: ${devPhone}`);
             } catch (devError) {
                 console.error(`❌ فشل إرسال لـ ${devPhone}:`, devError.message);
             }
         }
-        console.log(`📨 تم إبلاغ المطورين عن مستخدم جديد: ${userInfo.phone}`);
+        
+        if (successCount > 0) {
+            console.log(`📨 تم إبلاغ ${successCount}/${DEVELOPER_PHONES.length} مطورين عن مستخدم جديد: ${userInfo.phone}`);
+        } else {
+            console.log(`⚠️ لم يتم إبلاغ أي مطور عن: ${userInfo.phone}`);
+        }
     } catch (error) {
         console.error('❌ مشكل فإبلاغ المطور:', error.message);
     }
@@ -1357,34 +1364,6 @@ async function handleMessage(sock, remoteJid, userId, senderPhone, text, msg, us
 ◄ سرعة مزيانة
 ◄ أولوية فالطلبات${POWERED_BY}`
         }, msg);
-        return;
-    }
-
-    if (text === BOT_PASSWORD) {
-        authenticatedUsers.add(senderPhone);
-        await sendBotMessage(sock, remoteJid, { 
-            text: `✅ *تم التفعيل بنجاح!*
-
-مرحباً بك! دابا تقدر تستخدم البوت:
-
-◄ تأخير 1 ثانية فقط
-◄ 10 تنزيلات متسارعة
-◄ 25 رسالة في الساعة
-
-صيفط اسم التطبيق باش نبحثلك!${POWERED_BY}`
-        }, msg, { senderPhone });
-        return;
-    }
-
-    if (!isAuthenticated(senderPhone) && !isAdmin) {
-        const authMessage = `🔐 *مرحباً بك في بوت AppOmar*
-
-للاستخدام، أدخل كلمة السر
-
-أو تابع المطور على انستجرام للحصول على كلمة السر:
-${INSTAGRAM_URL}${POWERED_BY}`;
-
-        await sendBotMessage(sock, remoteJid, { text: authMessage }, msg);
         return;
     }
 
