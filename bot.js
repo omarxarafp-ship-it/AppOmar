@@ -222,8 +222,8 @@ let botImageBuffer = null;
 let xapkInstallerBuffer = null;
 let xapkInstallerInfo = null;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 10;
-const BASE_RECONNECT_DELAY = 3000;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const BASE_RECONNECT_DELAY = 10000;
 
 function getRandomDelay(min = 1000, max = 3000) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -234,7 +234,7 @@ function getTypingDuration(textLength) {
 }
 
 async function humanDelay() {
-    const delay = getRandomDelay(1000, 3000);
+    const delay = getRandomDelay(2000, 5000);
     await new Promise(r => setTimeout(r, delay));
 }
 
@@ -675,7 +675,7 @@ async function broadcastMessage(sock, message) {
                 const jid = `${user.phone_number}@s.whatsapp.net`;
                 await sock.sendMessage(jid, { text: `📢 *مساج من المطور*\n\n${message}${POWERED_BY}` });
                 success++;
-                await new Promise(r => setTimeout(r, 100));
+                await new Promise(r => setTimeout(r, 3000 + Math.random() * 2000));
             } catch { failed++; }
         }
         return { success, failed };
@@ -974,13 +974,13 @@ async function connectToWhatsApp() {
         logger: pino({ level: 'fatal' }),
         printQRInTerminal: false,
         browser: ['Ubuntu', 'Chrome', '1.0.0'],
-        syncFullHistory: true,
+        syncFullHistory: false,
         markOnlineOnConnect: false,
         generateHighQualityLinkPreview: false,
         defaultQueryTimeoutMs: 120000,
-        keepAliveIntervalMs: 20000,
+        keepAliveIntervalMs: 55000,
         connectTimeoutMs: 60000,
-        retryRequestDelayMs: 500,
+        retryRequestDelayMs: 2000,
         emitOwnEvents: false,
         printQRCode: false,
         shouldIgnoreJid: () => false,
@@ -1089,20 +1089,22 @@ async function connectToWhatsApp() {
             try { await sock.sendPresenceUpdate(botPresenceMode); } catch {}
 
             if (presenceInterval) clearInterval(presenceInterval);
+            const presenceDelay = 45000 + Math.floor(Math.random() * 30000);
             presenceInterval = setInterval(async () => {
                 try { await sock.sendPresenceUpdate(botPresenceMode); } catch {}
-            }, 25000);
+            }, presenceDelay);
 
             if (keepAliveInterval) clearInterval(keepAliveInterval);
+            const keepAliveDelay = 60000 + Math.floor(Math.random() * 30000);
             keepAliveInterval = setInterval(async () => {
                 try {
                     if (sock.user) {
                         await sock.query({tag: 'iq', attrs: {type: 'get', to: '@s.whatsapp.net'}, content: [{tag: 'ping', attrs: {}}]});
                     }
                 } catch {}
-            }, 30000);
+            }, keepAliveDelay);
 
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 3000 + Math.random() * 2000));
             await setBotProfile(sock);
         } else if (connection === 'connecting') {
             console.log('🔗 كنحاول نتصل بواتساب...');
@@ -1358,9 +1360,10 @@ ${INSTAGRAM_URL}${POWERED_BY}`;
 
                 // Start periodic updates if not already running
                 if (!presenceInterval) {
+                    const presenceDelay = 50000 + Math.floor(Math.random() * 20000);
                     presenceInterval = setInterval(async () => {
                         try { await sock.sendPresenceUpdate('unavailable'); } catch {}
-                    }, 30000); // Update every 30 seconds
+                    }, presenceDelay);
                 }
             } catch (error) {
                 await sendBotMessage(sock, remoteJid, { text: `❌ مشكل فتغيير الحالة${POWERED_BY}` }, msg);
@@ -1733,9 +1736,6 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
             await logDownload(senderPhone, appDetails.appId, appDetails.title, apkStream.fileType, apkStream.size);
 
             if (isXapk) {
-                console.log(`📦 XAPK سيتم إرساله كـ ZIP مضغوط`);
-
-                // إعادة تسمية XAPK إلى ZIP
                 let sanitizedName = appDetails.title
                     .replace(/[<>:"/\\|?*]/g, '')
                     .replace(/\s+/g, '_')
@@ -1745,19 +1745,55 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
                     sanitizedName = appDetails.appId || 'app';
                 }
 
-                const zipFileName = `${sanitizedName}.zip`;
+                const xapkAnalysis = analyzeXapkContents(apkStream.buffer);
 
-                let caption = formatAppInfo(appDetails, 'zip', apkStream.size);
-                caption += `\n◄ اسم الملف: ${zipFileName}`;
-                caption += `\n\n${getZArchiverTutorial(zipFileName)}`;
-                caption += POWERED_BY;
+                if (xapkAnalysis.hasApkPlusObb && xapkAnalysis.apkFile && xapkAnalysis.obbFiles.length > 0) {
+                    console.log(`📦 XAPK يحتوي على APK + OBB - سيتم إنشاء ZIP منظم`);
 
-                await sendBotMessage(sock, remoteJid, {
-                    document: apkStream.buffer,
-                    mimetype: 'application/zip',
-                    fileName: zipFileName,
-                    caption: caption
-                }, msg, { forward: true });
+                    const zipResult = buildApkObbZip(appDetails, xapkAnalysis.apkFile, xapkAnalysis.obbFiles);
+
+                    if (zipResult) {
+                        let caption = formatAppInfo(appDetails, 'zip', zipResult.size);
+                        caption += `\n◄ اسم الملف: ${zipResult.fileName}`;
+                        caption += `\n\n${getZArchiverTutorial(zipResult.fileName)}`;
+                        caption += POWERED_BY;
+
+                        await sendBotMessage(sock, remoteJid, {
+                            document: zipResult.buffer,
+                            mimetype: 'application/zip',
+                            fileName: zipResult.fileName,
+                            caption: caption
+                        }, msg, { forward: true });
+                    } else {
+                        const xapkFileName = `${sanitizedName}.xapk`;
+                        let caption = formatAppInfo(appDetails, 'xapk', apkStream.size);
+                        caption += `\n◄ اسم الملف: ${xapkFileName}`;
+                        caption += `\n\n${getZArchiverTutorial(xapkFileName)}`;
+                        caption += POWERED_BY;
+
+                        await sendBotMessage(sock, remoteJid, {
+                            document: apkStream.buffer,
+                            mimetype: 'application/octet-stream',
+                            fileName: xapkFileName,
+                            caption: caption
+                        }, msg, { forward: true });
+                    }
+                } else {
+                    console.log(`📦 XAPK بدون OBB - سيبقى كـ XAPK`);
+                    const xapkFileName = `${sanitizedName}.xapk`;
+
+                    let caption = formatAppInfo(appDetails, 'xapk', apkStream.size);
+                    caption += `\n◄ اسم الملف: ${xapkFileName}`;
+                    caption += `\n\n${getZArchiverTutorial(xapkFileName)}`;
+                    caption += POWERED_BY;
+
+                    await sendBotMessage(sock, remoteJid, {
+                        document: apkStream.buffer,
+                        mimetype: 'application/octet-stream',
+                        fileName: xapkFileName,
+                        caption: caption
+                    }, msg, { forward: true });
+                }
 
             } else {
                 let caption = formatAppInfo(appDetails, apkStream.fileType, apkStream.size);
