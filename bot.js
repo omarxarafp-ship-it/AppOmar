@@ -47,14 +47,14 @@ function analyzeXapkContents(xapkBuffer) {
     try {
         const zip = new AdmZip(xapkBuffer);
         const entries = zip.getEntries();
-        
+
         let apkFile = null;
         let obbFiles = [];
         let splitApks = [];
-        
+
         for (const entry of entries) {
             const name = entry.entryName.toLowerCase();
-            
+
             if (name.endsWith('.obb') && !entry.isDirectory) {
                 obbFiles.push({
                     name: entry.entryName,
@@ -83,12 +83,12 @@ function analyzeXapkContents(xapkBuffer) {
                 }
             }
         }
-        
+
         const hasApkPlusObb = apkFile && obbFiles.length > 0;
         const hasSplitApks = splitApks.length > 0;
-        
+
         console.log(`📦 تحليل XAPK: APK=${apkFile ? 'نعم' : 'لا'}, OBB=${obbFiles.length}, Split APKs=${splitApks.length}`);
-        
+
         return {
             hasApkPlusObb,
             hasSplitApks,
@@ -104,6 +104,52 @@ function analyzeXapkContents(xapkBuffer) {
             apkFile: null,
             obbFiles: [],
             splitApks: []
+        };
+    }
+}
+
+function buildApkObbZip(appDetails, apkFile, obbFiles) {
+    try {
+        const zip = new AdmZip();
+
+        let sanitizedName = appDetails.title
+            .replace(/[<>:"/\\|?*]/g, '')
+            .replace(/\s+/g, '_')
+            .substring(0, 50);
+
+        if (!sanitizedName || sanitizedName.trim() === '') {
+            sanitizedName = appDetails.appId || 'app';
+        }
+
+        // إضافة ملف APK في الجذر
+        const apkFileName = `${sanitizedName}.apk`;
+        zip.addFile(apkFileName, apkFile.buffer);
+        console.log(`📦 أضفت APK: ${apkFileName}`);
+
+        // إضافة ملفات OBB في مجلد باسم الـ package
+        for (const obbFile of obbFiles) {
+            const originalObbName = path.basename(obbFile.name);
+            const obbPath = `${appDetails.appId}/${originalObbName}`;
+            zip.addFile(obbPath, obbFile.buffer);
+            console.log(`📦 أضفت OBB: ${obbPath}`);
+        }
+
+        const zipBuffer = zip.toBuffer();
+        const zipFileName = `${sanitizedName}_مع_OBB.zip`;
+
+        console.log(`✅ تم إنشاء ZIP: ${zipFileName} (${formatFileSize(zipBuffer.length)})`);
+
+        return {
+            success: true,
+            buffer: zipBuffer,
+            fileName: zipFileName,
+            size: zipBuffer.length
+        };
+    } catch (error) {
+        console.error('❌ خطأ في إنشاء ZIP:', error.message);
+        return {
+            success: false,
+            error: error.message
         };
     }
 }
@@ -660,9 +706,13 @@ function formatFileSize(bytes) {
 }
 
 function formatAppInfo(appDetails, fileType, fileSize) {
+    let typeLabel = fileType.toUpperCase();
+    if (fileType === 'zip') {
+        typeLabel = 'ZIP (APK + OBB)';
+    }
     return `📱 *${appDetails.title}*
 
-◄ النوع: ${fileType.toUpperCase()}
+◄ النوع: ${typeLabel}
 ◄ الحجم: ${formatFileSize(fileSize)}
 ◄ التحميلات: ${appDetails.installs || 'ما معروفش'}`;
 }
@@ -962,10 +1012,10 @@ async function connectToWhatsApp() {
         if (connection === 'close') {
             const statusCode = (lastDisconnect?.error instanceof Boom) 
                 ? lastDisconnect.error.output.statusCode : 500;
-            
+
             let shouldReconnect = true;
             let reasonMsg = '';
-            
+
             switch (statusCode) {
                 case DisconnectReason.loggedOut:
                     shouldReconnect = false;
@@ -978,8 +1028,8 @@ async function connectToWhatsApp() {
                     reasonMsg = 'ضاع الاتصال';
                     break;
                 case DisconnectReason.connectionReplaced:
-                    reasonMsg = 'الاتصال تعوض بجهاز آخر';
                     shouldReconnect = false;
+                    reasonMsg = 'الاتصال تعوض بجهاز آخر';
                     break;
                 case DisconnectReason.timedOut:
                     reasonMsg = 'انتهى الوقت';
@@ -1004,9 +1054,9 @@ async function connectToWhatsApp() {
                 default:
                     reasonMsg = `كود الخطأ: ${statusCode}`;
             }
-            
+
             console.log(`❌ الاتصال تقطع - ${reasonMsg}`);
-            
+
             if (keepAliveInterval) {
                 clearInterval(keepAliveInterval);
                 keepAliveInterval = null;
@@ -1015,7 +1065,7 @@ async function connectToWhatsApp() {
                 clearInterval(presenceInterval);
                 presenceInterval = null;
             }
-            
+
             if (shouldReconnect && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                 reconnectAttempts++;
                 const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts - 1), 60000);
@@ -1035,19 +1085,19 @@ async function connectToWhatsApp() {
             console.log('🤖 بوت AppOmar واجد');
             console.log(`👨‍💻 نمرة المطور: ${DEVELOPER_PHONES.join(', ')}`);
             pairingCodeRequested = false;
-            
+
             try { await sock.sendPresenceUpdate(botPresenceMode); } catch {}
 
             if (presenceInterval) clearInterval(presenceInterval);
             presenceInterval = setInterval(async () => {
                 try { await sock.sendPresenceUpdate(botPresenceMode); } catch {}
             }, 25000);
-            
+
             if (keepAliveInterval) clearInterval(keepAliveInterval);
             keepAliveInterval = setInterval(async () => {
                 try {
                     if (sock.user) {
-                        await sock.query({ tag: 'iq', attrs: { type: 'get', to: '@s.whatsapp.net' }, content: [{ tag: 'ping', attrs: {} }] });
+                        await sock.query({tag: 'iq', attrs: {type: 'get', to: '@s.whatsapp.net'}, content: [{tag: 'ping', attrs: {}}]});
                     }
                 } catch {}
             }, 30000);
@@ -1305,7 +1355,7 @@ ${INSTAGRAM_URL}${POWERED_BY}`;
             try { 
                 await sock.sendPresenceUpdate(botPresenceMode); 
                 await sendBotMessage(sock, remoteJid, { text: `🔴 *البوت ولى Offline*\n\nدابا البوت مش متصل ظاهرياً${POWERED_BY}` }, msg);
-                
+
                 // Start periodic updates if not already running
                 if (!presenceInterval) {
                     presenceInterval = setInterval(async () => {
@@ -1323,7 +1373,7 @@ ${INSTAGRAM_URL}${POWERED_BY}`;
             try { 
                 await sock.sendPresenceUpdate(botPresenceMode); 
                 await sendBotMessage(sock, remoteJid, { text: `🟢 *البوت ولى Online*\n\nدابا البوت متصل${POWERED_BY}` }, msg);
-                
+
                 // Clear periodic updates
                 if (presenceInterval) {
                     clearInterval(presenceInterval);
@@ -1523,9 +1573,7 @@ AppOmar Bot v3.0
             // User entered text instead of a number - treat as new search
             // Delete the old list message
             if (session.lastListMessageKey) {
-                try { 
-                    await sock.sendMessage(remoteJid, { delete: session.lastListMessageKey }); 
-                } catch {}
+                try { await sock.sendMessage(remoteJid, { delete: session.lastListMessageKey }); } catch {}
                 session.lastListMessageKey = null;
             }
 
@@ -1685,62 +1733,32 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
             await logDownload(senderPhone, appDetails.appId, appDetails.title, apkStream.fileType, apkStream.size);
 
             if (isXapk) {
-                const xapkAnalysis = analyzeXapkContents(apkStream.buffer);
-                
-                if (xapkAnalysis.hasApkPlusObb && xapkAnalysis.apkFile && xapkAnalysis.obbFiles.length > 0) {
-                    console.log(`📦 XAPK يحتوي على APK + OBB - سيتم إرسالهم منفصلين`);
-                    
-                    const safeTitle = appDetails.title.replace(/[^\w\s\u0600-\u06FF-]/g, '').trim();
-                    
-                    let apkCaption = formatAppInfo(appDetails, 'apk', xapkAnalysis.apkFile.size);
-                    apkCaption += `\n◄ اسم الملف: ${safeTitle}.apk`;
-                    apkCaption += `\n\n*📱 ملف APK - ثبته أولاً*`;
-                    apkCaption += POWERED_BY;
-                    
-                    await sendBotMessage(sock, remoteJid, {
-                        document: xapkAnalysis.apkFile.buffer,
-                        mimetype: 'application/vnd.android.package-archive',
-                        fileName: `${safeTitle}.apk`,
-                        caption: apkCaption
-                    }, msg, { forward: true });
-                    
-                    for (let i = 0; i < xapkAnalysis.obbFiles.length; i++) {
-                        const obbFile = xapkAnalysis.obbFiles[i];
-                        const obbFileName = obbFile.name.includes('/') ? obbFile.name.split('/').pop() : obbFile.name;
-                        
-                        let obbCaption = `*📦 ملف OBB ${xapkAnalysis.obbFiles.length > 1 ? `(${i + 1}/${xapkAnalysis.obbFiles.length})` : ''}*`;
-                        obbCaption += `\n◄ الحجم: ${formatFileSize(obbFile.size)}`;
-                        obbCaption += `\n\n*طريقة التثبيت:*`;
-                        obbCaption += `\n1️⃣ ثبّت APK أولاً`;
-                        obbCaption += `\n2️⃣ انسخ ملف OBB إلى:`;
-                        obbCaption += `\n   📁 Android/obb/${appDetails.appId}/`;
-                        obbCaption += `\n3️⃣ افتح التطبيق واستمتع!`;
-                        obbCaption += `\n\n⚠️ *لا تغير اسم الملف!*`;
-                        obbCaption += POWERED_BY;
-                        
-                        await sendBotMessage(sock, remoteJid, {
-                            document: obbFile.buffer,
-                            mimetype: 'application/octet-stream',
-                            fileName: obbFileName,
-                            caption: obbCaption
-                        }, msg, { forward: true });
-                    }
-                    
-                } else {
-                    console.log(`📦 XAPK يحتوي على Split APKs - سيتم إرساله كـ XAPK`);
-                    
-                    let caption = formatAppInfo(appDetails, apkStream.fileType, apkStream.size);
-                    caption += `\n◄ اسم الملف: ${apkStream.filename}`;
-                    caption += `\n\n${getZArchiverTutorial(apkStream.filename)}`;
-                    caption += POWERED_BY;
+                console.log(`📦 XAPK سيتم إرساله كـ ZIP مضغوط`);
 
-                    await sendBotMessage(sock, remoteJid, {
-                        document: apkStream.buffer,
-                        mimetype: 'application/octet-stream',
-                        fileName: apkStream.filename,
-                        caption: caption
-                    }, msg, { forward: true });
+                // إعادة تسمية XAPK إلى ZIP
+                let sanitizedName = appDetails.title
+                    .replace(/[<>:"/\\|?*]/g, '')
+                    .replace(/\s+/g, '_')
+                    .substring(0, 50);
+
+                if (!sanitizedName || sanitizedName.trim() === '') {
+                    sanitizedName = appDetails.appId || 'app';
                 }
+
+                const zipFileName = `${sanitizedName}.zip`;
+
+                let caption = formatAppInfo(appDetails, 'zip', apkStream.size);
+                caption += `\n◄ اسم الملف: ${zipFileName}`;
+                caption += `\n\n${getZArchiverTutorial(zipFileName)}`;
+                caption += POWERED_BY;
+
+                await sendBotMessage(sock, remoteJid, {
+                    document: apkStream.buffer,
+                    mimetype: 'application/zip',
+                    fileName: zipFileName,
+                    caption: caption
+                }, msg, { forward: true });
+
             } else {
                 let caption = formatAppInfo(appDetails, apkStream.fileType, apkStream.size);
                 caption += `\n◄ اسم الملف: ${apkStream.filename}`;
