@@ -168,30 +168,61 @@ const POWERED_BY = '\n\n> © من طرف AppOmar';
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
 
 const ZARCHIVER_PACKAGE = 'ru.zdevs.zarchiver';
-function getZArchiverTutorial(fileName) {
-    const appName = fileName.replace(/\.(xapk|apk)$/i, '');
-    return `\n*طريقة تثبيت XAPK:*
 
-1️⃣ حل الملف ب ZArchiver
-2️⃣ غادي تشوف الملفات ديال التطبيق - رجع للوراء
-3️⃣ غادي تلقى التطبيق بالاسم "${appName}"
-4️⃣ ضغط عليه مطولا  غادي يبان Install أو تثبيت
-5️⃣ مبروك! شكراً لأنك كتستعمل AppOmar
+function getZipObbTutorial(fileName, packageId) {
+    const appName = fileName.replace(/\.(zip|xapk|apk)$/i, '');
+    return `
+📦 *كيفاش تثبت ${appName}:*
 
-> إلا ماعندكش Zarchiverكتب Zarchiverوالبوت غادي يعطيك التطبيق باش تبث ملفات Xapk بدون مشكلة `;
+1️⃣ افتح الملف ب *ZArchiver*
+2️⃣ غادي تلقى:
+   • ملف APK ديال التطبيق
+   • مجلد فيه ملفات OBB
+
+3️⃣ *ثبت APK أولاً:*
+   - ضغط مطول على ملف APK
+   - اختار "Install" أو "تثبيت"
+
+4️⃣ *نقل ملفات OBB:*
+   - ادخل للمجلد ${packageId}
+   - ضغط مطول على ملف OBB
+   - اختار "نسخ" أو "Copy"
+   - روح لـ: Android/obb/${packageId}/
+   - لصق الملف هنا
+
+5️⃣ افتح التطبيق ومبروووك! 🎉
+
+💡 ماعندكش ZArchiver؟ كتب *zarchiver* وغادي نرسلو ليك`;
 }
 
-const ZARCHIVER_TUTORIAL_BASIC = `*طريقة تثبيت XAPK:*
+function getXapkTutorial(fileName) {
+    const appName = fileName.replace(/\.(xapk|apk)$/i, '');
+    return `
+📦 *كيفاش تثبت ${appName}:*
 
-1️⃣ حل الملف ب ZArchiver
-2️⃣ غادي تشوف الملفات ديال التطبيق - رجع للوراء
-3️⃣ غادي تلقى التطبيق بالاسم
-4️⃣ ضغط عليه مطولا  غادي يبان Install أو تثبيت
-5️⃣ مبروك! شكراً لأنك كتستعمل AppOmar
+1️⃣ افتح *ZArchiver*
+2️⃣ لقى الملف "${appName}.xapk"
+3️⃣ ضغط عليه مطول
+4️⃣ اختار "Install" أو "تثبيت"
+5️⃣ تسنى شوية... ومبروووك! 🎉
 
-إلا ماعندكش Zarchiverكتب Zarchiverوالبوت غادي يعطيك التطبيق باش تبث ملفات Xapk بدون مشكل
+💡 ماعندكش ZArchiver؟ كتب *zarchiver* وغادي نرسلو ليك`;
+}
 
-باش تنزل  ZArchiver صيفط: zarchiver`;
+function getZArchiverTutorial(fileName) {
+    return getXapkTutorial(fileName);
+}
+
+const ZARCHIVER_TUTORIAL_BASIC = `
+📦 *كيفاش تثبت XAPK:*
+
+1️⃣ افتح *ZArchiver*
+2️⃣ لقى ملف XAPK لي نزلتي
+3️⃣ ضغط عليه مطول
+4️⃣ اختار "Install" أو "تثبيت"
+5️⃣ تسنى شوية... ومبروووك! 🎉
+
+💡 ماعندكش ZArchiver؟ كتب *zarchiver* وغادي نرسلو ليك`;
 
 let pool = null;
 let dbEnabled = false;
@@ -1755,7 +1786,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
                     if (zipResult) {
                         let caption = formatAppInfo(appDetails, 'zip', zipResult.size);
                         caption += `\n◄ اسم الملف: ${zipResult.fileName}`;
-                        caption += `\n\n${getZArchiverTutorial(zipResult.fileName)}`;
+                        caption += `\n\n${getZipObbTutorial(zipResult.fileName, appDetails.appId)}`;
                         caption += POWERED_BY;
 
                         await sendBotMessage(sock, remoteJid, {
@@ -1768,7 +1799,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
                         const xapkFileName = `${sanitizedName}.xapk`;
                         let caption = formatAppInfo(appDetails, 'xapk', apkStream.size);
                         caption += `\n◄ اسم الملف: ${xapkFileName}`;
-                        caption += `\n\n${getZArchiverTutorial(xapkFileName)}`;
+                        caption += `\n\n${getXapkTutorial(xapkFileName)}`;
                         caption += POWERED_BY;
 
                         await sendBotMessage(sock, remoteJid, {
@@ -1784,7 +1815,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
 
                     let caption = formatAppInfo(appDetails, 'xapk', apkStream.size);
                     caption += `\n◄ اسم الملف: ${xapkFileName}`;
-                    caption += `\n\n${getZArchiverTutorial(xapkFileName)}`;
+                    caption += `\n\n${getXapkTutorial(xapkFileName)}`;
                     caption += POWERED_BY;
 
                     await sendBotMessage(sock, remoteJid, {
