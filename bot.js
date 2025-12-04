@@ -10,6 +10,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import { request } from 'undici';
 import sharp from 'sharp';
+import AdmZip from 'adm-zip';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,6 +42,82 @@ function cleanupOldDownloads() {
 }
 
 setInterval(cleanupOldDownloads, 10 * 60 * 1000);
+
+function analyzeXapkContents(xapkBuffer) {
+    try {
+        const zip = new AdmZip(xapkBuffer);
+        const entries = zip.getEntries();
+        
+        let apkFile = null;
+        let obbFiles = [];
+        let splitApks = [];
+        
+        for (const entry of entries) {
+            const name = entry.entryName.toLowerCase();
+            
+            if (name.endsWith('.obb') && !entry.isDirectory) {
+                obbFiles.push({
+                    name: entry.entryName,
+                    buffer: entry.getData(),
+                    size: entry.header.size
+                });
+            } else if (name.endsWith('.apk') && !entry.isDirectory) {
+                if (name === 'base.apk' || name.includes('base')) {
+                    apkFile = {
+                        name: entry.entryName,
+                        buffer: entry.getData(),
+                        size: entry.header.size
+                    };
+                } else if (name.includes('split') || name.includes('config')) {
+                    splitApks.push({
+                        name: entry.entryName,
+                        buffer: entry.getData(),
+                        size: entry.header.size
+                    });
+                } else if (!apkFile) {
+                    apkFile = {
+                        name: entry.entryName,
+                        buffer: entry.getData(),
+                        size: entry.header.size
+                    };
+                }
+            }
+        }
+        
+        const hasApkPlusObb = apkFile && obbFiles.length > 0;
+        const hasSplitApks = splitApks.length > 0;
+        
+        console.log(`📦 تحليل XAPK: APK=${apkFile ? 'نعم' : 'لا'}, OBB=${obbFiles.length}, Split APKs=${splitApks.length}`);
+        
+        return {
+            hasApkPlusObb,
+            hasSplitApks,
+            apkFile,
+            obbFiles,
+            splitApks
+        };
+    } catch (error) {
+        console.error('❌ خطأ في تحليل XAPK:', error.message);
+        return {
+            hasApkPlusObb: false,
+            hasSplitApks: false,
+            apkFile: null,
+            obbFiles: [],
+            splitApks: []
+        };
+    }
+}
+
+function getObbInstallTutorial(appTitle, obbFileName) {
+    return `*طريقة تثبيت APK + OBB:*
+
+1️⃣ ثبّت ملف APK أولاً
+2️⃣ انسخ ملف OBB إلى:
+   Android/obb/${obbFileName.split('/')[0] || 'com.game.package'}/
+3️⃣ افتح التطبيق واستمتع!
+
+> إلا ماعرفتش كيفاش، استعمل تطبيق إدارة الملفات`;
+}
 
 const logger = pino({ 
     level: 'silent',
