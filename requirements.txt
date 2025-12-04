@@ -50,3 +50,7 @@ psycopg2-binary
 python-multipart
 trafilatura
 uvicorn
+aiofiles
+aiohttp
+fastapi
+uvicorn
