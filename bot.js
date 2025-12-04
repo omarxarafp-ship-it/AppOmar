@@ -1778,22 +1778,8 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
                             caption: caption
                         }, msg, { forward: true });
                     }
-                } else if (xapkAnalysis.apkFile) {
-                    console.log(`📦 XAPK بدون OBB - سيتم استخراج APK الأساسي فقط`);
-                    const apkFileName = `${sanitizedName}.apk`;
-
-                    let caption = formatAppInfo(appDetails, 'apk', xapkAnalysis.apkFile.size);
-                    caption += `\n◄ اسم الملف: ${apkFileName}`;
-                    caption += POWERED_BY;
-
-                    await sendBotMessage(sock, remoteJid, {
-                        document: xapkAnalysis.apkFile.buffer,
-                        mimetype: 'application/vnd.android.package-archive',
-                        fileName: apkFileName,
-                        caption: caption
-                    }, msg, { forward: true });
                 } else {
-                    console.log(`📦 XAPK لم يتم العثور على APK - إرسال كـ XAPK`);
+                    console.log(`📦 XAPK بدون OBB - إرسال كـ XAPK مضغوط`);
                     const xapkFileName = `${sanitizedName}.xapk`;
 
                     let caption = formatAppInfo(appDetails, 'xapk', apkStream.size);
