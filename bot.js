@@ -108,17 +108,6 @@ function analyzeXapkContents(xapkBuffer) {
     }
 }
 
-function getObbInstallTutorial(appTitle, obbFileName) {
-    return `*طريقة تثبيت APK + OBB:*
-
-1️⃣ ثبّت ملف APK أولاً
-2️⃣ انسخ ملف OBB إلى:
-   Android/obb/${obbFileName.split('/')[0] || 'com.game.package'}/
-3️⃣ افتح التطبيق واستمتع!
-
-> إلا ماعرفتش كيفاش، استعمل تطبيق إدارة الملفات`;
-}
-
 const logger = pino({ 
     level: 'silent',
     serializers: {
