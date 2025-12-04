@@ -293,10 +293,11 @@ function getTypingDuration(textLength) {
 
 async function humanDelay(phone = null) {
     let delay;
-    if (phone && isAuthenticated(phone)) {
-        delay = USER_LIMITS.authenticated.messageDelay;
+    if (phone) {
+        const limits = getUserLimits(phone);
+        delay = limits.messageDelay;
     } else {
-        delay = getRandomDelay(2000, 5000);
+        delay = USER_LIMITS.unauthenticated.messageDelay;
     }
     await new Promise(r => setTimeout(r, delay));
 }
@@ -462,7 +463,11 @@ async function setBotProfile(sock) {
 
 async function notifyDeveloperNewUser(sock, userInfo, firstMessage) {
     try {
-        const devJid = `${DEVELOPER_PHONES[0]}@s.whatsapp.net`;
+        if (!userInfo || !userInfo.phone) {
+            console.log('⚠️ معلومات المستخدم غير كاملة، لن يتم الإبلاغ');
+            return;
+        }
+
         const now = new Date();
         const dateStr = now.toLocaleString('ar-EG', { 
             timeZone: 'Africa/Casablanca',
@@ -473,22 +478,31 @@ async function notifyDeveloperNewUser(sock, userInfo, firstMessage) {
             minute: '2-digit'
         });
         
+        const safeFirstMessage = firstMessage || '(لا توجد رسالة)';
+        
         const notifyText = `🆕 *مستخدم جديد!*
 
-👤 الاسم: ${userInfo.name}
+👤 الاسم: ${userInfo.name || 'غير معروف'}
 📱 الرقم: +${userInfo.phone}${userInfo.status ? `\n📝 الحالة: ${userInfo.status}` : ''}
-💬 أول رسالة: ${firstMessage}
+💬 أول رسالة: ${safeFirstMessage}
 🕐 الوقت: ${dateStr}`;
 
-        if (userInfo.profilePic) {
-            await sock.sendMessage(devJid, {
-                image: userInfo.profilePic,
-                caption: notifyText
-            });
-        } else {
-            await sock.sendMessage(devJid, { text: notifyText });
+        for (const devPhone of DEVELOPER_PHONES) {
+            try {
+                const devJid = `${devPhone}@s.whatsapp.net`;
+                if (userInfo.profilePic) {
+                    await sock.sendMessage(devJid, {
+                        image: userInfo.profilePic,
+                        caption: notifyText
+                    });
+                } else {
+                    await sock.sendMessage(devJid, { text: notifyText });
+                }
+            } catch (devError) {
+                console.error(`❌ فشل إرسال لـ ${devPhone}:`, devError.message);
+            }
         }
-        console.log(`📨 تم إبلاغ المطور عن مستخدم جديد: ${userInfo.phone}`);
+        console.log(`📨 تم إبلاغ المطورين عن مستخدم جديد: ${userInfo.phone}`);
     } catch (error) {
         console.error('❌ مشكل فإبلاغ المطور:', error.message);
     }
