@@ -244,6 +244,22 @@ const groupMetadataCache = new Map();
 const messageStore = new Map();
 const lidToPhoneMap = new Map();
 const VIP_PASSWORD = 'Omar';
+const BOT_PASSWORD = 'Omar18';
+const authenticatedUsers = new Set();
+
+const USER_LIMITS = {
+    authenticated: {
+        messageDelay: 1000,
+        maxConcurrentDownloads: 10,
+        messagesPerHour: 25
+    },
+    unauthenticated: {
+        messageDelay: 3000,
+        maxConcurrentDownloads: 3,
+        messagesPerHour: 20
+    }
+};
+
 let botPresenceMode = 'unavailable'; // 'unavailable' or 'available'
 let presenceInterval = null;
 let keepAliveInterval = null;
@@ -260,12 +276,28 @@ function getRandomDelay(min = 1000, max = 3000) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function isAuthenticated(phone) {
+    return authenticatedUsers.has(phone) || isDeveloper(phone);
+}
+
+function getUserLimits(phone) {
+    if (isAuthenticated(phone) || isDeveloper(phone)) {
+        return USER_LIMITS.authenticated;
+    }
+    return USER_LIMITS.unauthenticated;
+}
+
 function getTypingDuration(textLength) {
     return 0;
 }
 
-async function humanDelay() {
-    const delay = getRandomDelay(2000, 5000);
+async function humanDelay(phone = null) {
+    let delay;
+    if (phone && isAuthenticated(phone)) {
+        delay = USER_LIMITS.authenticated.messageDelay;
+    } else {
+        delay = getRandomDelay(2000, 5000);
+    }
     await new Promise(r => setTimeout(r, delay));
 }
 
@@ -332,7 +364,13 @@ async function simulateTyping(sock, remoteJid, textLength = 50) {
 }
 
 async function sendBotMessage(sock, remoteJid, content, originalMsg = null, options = {}) {
-    await humanDelay();
+    let senderPhone = options.senderPhone || null;
+    
+    if (!senderPhone && originalMsg) {
+        senderPhone = extractPhoneFromMessage(originalMsg);
+    }
+    
+    await humanDelay(senderPhone);
 
     const messageContent = { ...content };
 
@@ -419,6 +457,40 @@ async function setBotProfile(sock) {
         }
     } catch (error) {
         console.error('⚠️ مشكل فتحديث صورة البروفايل:', error.message);
+    }
+}
+
+async function notifyDeveloperNewUser(sock, userInfo, firstMessage) {
+    try {
+        const devJid = `${DEVELOPER_PHONES[0]}@s.whatsapp.net`;
+        const now = new Date();
+        const dateStr = now.toLocaleString('ar-EG', { 
+            timeZone: 'Africa/Casablanca',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        
+        const notifyText = `🆕 *مستخدم جديد!*
+
+👤 الاسم: ${userInfo.name}
+📱 الرقم: +${userInfo.phone}${userInfo.status ? `\n📝 الحالة: ${userInfo.status}` : ''}
+💬 أول رسالة: ${firstMessage}
+🕐 الوقت: ${dateStr}`;
+
+        if (userInfo.profilePic) {
+            await sock.sendMessage(devJid, {
+                image: userInfo.profilePic,
+                caption: notifyText
+            });
+        } else {
+            await sock.sendMessage(devJid, { text: notifyText });
+        }
+        console.log(`📨 تم إبلاغ المطور عن مستخدم جديد: ${userInfo.phone}`);
+    } catch (error) {
+        console.error('❌ مشكل فإبلاغ المطور:', error.message);
     }
 }
 
@@ -632,7 +704,8 @@ function checkHourlySpam(phone) {
     }
     tracker.messages = tracker.messages.filter(t => now - t < oneHour);
     tracker.messages.push(now);
-    if (tracker.messages.length > 20) {
+    const limits = getUserLimits(phone);
+    if (tracker.messages.length > limits.messagesPerHour) {
         return 'block';
     }
     return 'ok';
@@ -643,7 +716,8 @@ function checkDownloadSpam(phone) {
     if (vipUsers.has(phone)) return 'ok';
     let tracker = downloadMessageTracker.get(phone);
     if (!tracker) return 'ok';
-    if (tracker.count >= 3) {
+    const limits = getUserLimits(phone);
+    if (tracker.count >= limits.maxConcurrentDownloads) {
         return 'block';
     }
     tracker.count++;
@@ -1272,6 +1346,34 @@ async function handleMessage(sock, remoteJid, userId, senderPhone, text, msg, us
         return;
     }
 
+    if (text === BOT_PASSWORD) {
+        authenticatedUsers.add(senderPhone);
+        await sendBotMessage(sock, remoteJid, { 
+            text: `✅ *تم التفعيل بنجاح!*
+
+مرحباً بك! دابا تقدر تستخدم البوت:
+
+◄ تأخير 1 ثانية فقط
+◄ 10 تنزيلات متسارعة
+◄ 25 رسالة في الساعة
+
+صيفط اسم التطبيق باش نبحثلك!${POWERED_BY}`
+        }, msg, { senderPhone });
+        return;
+    }
+
+    if (!isAuthenticated(senderPhone) && !isAdmin) {
+        const authMessage = `🔐 *مرحباً بك في بوت AppOmar*
+
+للاستخدام، أدخل كلمة السر
+
+أو تابع المطور على انستجرام للحصول على كلمة السر:
+${INSTAGRAM_URL}${POWERED_BY}`;
+
+        await sendBotMessage(sock, remoteJid, { text: authMessage }, msg);
+        return;
+    }
+
     if (lowerText === 'zarchiver' || lowerText === 'زارشيفر') {
         session.state = 'waiting_for_selection';
         session.searchResults = [{ title: 'ZArchiver', appId: ZARCHIVER_PACKAGE, developer: 'ZDevs', score: 4.5, index: 1 }];
@@ -1291,6 +1393,9 @@ async function handleMessage(sock, remoteJid, userId, senderPhone, text, msg, us
 
         // Fetch user profile info
         const userInfo = await getUserProfileInfo(sock, remoteJid, senderPhone, userName);
+
+        // إبلاغ المطور عن المستخدم الجديد
+        await notifyDeveloperNewUser(sock, userInfo, text);
 
         const welcomeText = `*بوت AppOmar*
 
