@@ -54,3 +54,11 @@ aiofiles
 aiohttp
 fastapi
 uvicorn
+aiofiles
+aria2p
+beautifulsoup4
+cloudscraper
+curl-cffi
+fastapi
+httpx
+uvicorn

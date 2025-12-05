@@ -2,6 +2,7 @@
 """
 APKPure Smart Client - Unified module for intelligent APK/XAPK detection and download
 Detects the actual file type from APKPure page and downloads the correct version
+With session refresh to prevent HTML responses after long periods
 """
 
 import sys
@@ -9,6 +10,7 @@ import os
 import re
 import time
 import hashlib
+import random
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 from enum import Enum
@@ -64,15 +66,27 @@ class DownloadInfo:
     detected_from: str = "unknown"
 
 
+_session_cache = {
+    'scraper': None,
+    'created_at': 0,
+    'request_count': 0
+}
+
+SESSION_MAX_AGE = 1800
+SESSION_MAX_REQUESTS = 50
+
+
 class APKPureClient:
     """Smart APKPure client that detects file type from page and downloads correctly"""
     
-    SAFARI_VERSIONS = ["safari15_3", "safari15_5", "safari17_0", "safari17_2"]
+    SAFARI_VERSIONS = ["safari15_3", "safari15_5", "safari17_0", "safari17_2", "safari17_2_macos"]
     
     USER_AGENTS = [
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4.1 Safari/605.1.15',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     ]
     
     BASE_URL = "https://apkpure.com"
@@ -84,48 +98,119 @@ class APKPureClient:
     def __init__(self, debug: bool = True):
         self.debug = debug
         self._scraper = None
+        self._last_request_time = 0
     
     def log(self, message: str, level: str = "INFO"):
         if self.debug:
             print(f"[APKPure {level}] {message}", file=sys.stderr)
     
+    def _needs_session_refresh(self) -> bool:
+        """Check if session needs to be refreshed to prevent HTML responses"""
+        global _session_cache
+        now = time.time()
+        
+        if _session_cache['scraper'] is None:
+            return True
+        
+        age = now - _session_cache['created_at']
+        if age > SESSION_MAX_AGE:
+            self.log(f"Session expired (age: {age:.0f}s > {SESSION_MAX_AGE}s)", "WARN")
+            return True
+        
+        if _session_cache['request_count'] > SESSION_MAX_REQUESTS:
+            self.log(f"Session request limit reached ({_session_cache['request_count']} > {SESSION_MAX_REQUESTS})", "WARN")
+            return True
+        
+        return False
+    
+    def _refresh_session(self):
+        """Create a fresh session with new cookies"""
+        global _session_cache
+        
+        self.log("Refreshing session to prevent HTML responses...")
+        
+        if cloudscraper:
+            _session_cache['scraper'] = cloudscraper.create_scraper(
+                browser={'browser': 'chrome', 'platform': 'darwin', 'desktop': True}
+            )
+        elif fallback_requests:
+            class FallbackScraper:
+                def __init__(self):
+                    self.session = fallback_requests.Session()
+                    self.session.headers.update({
+                        'User-Agent': random.choice(APKPureClient.USER_AGENTS)
+                    })
+                def get(self, url, **kwargs):
+                    return self.session.get(url, **kwargs)
+                def head(self, url, **kwargs):
+                    return self.session.head(url, **kwargs)
+            _session_cache['scraper'] = FallbackScraper()
+        
+        _session_cache['created_at'] = time.time()
+        _session_cache['request_count'] = 0
+        self._scraper = _session_cache['scraper']
+        
+        self.log("Session refreshed successfully")
+    
     @property
     def scraper(self):
-        if self._scraper is None:
-            if cloudscraper:
-                self._scraper = cloudscraper.create_scraper(
-                    browser={'browser': 'chrome', 'platform': 'darwin', 'desktop': True}
-                )
-            elif fallback_requests:
-                class FallbackScraper:
-                    def __init__(self):
-                        self.session = fallback_requests.Session()
-                        self.session.headers.update({
-                            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4.1 Safari/605.1.15'
-                        })
-                    def get(self, url, **kwargs):
-                        return self.session.get(url, **kwargs)
-                    def head(self, url, **kwargs):
-                        return self.session.head(url, **kwargs)
-                self._scraper = FallbackScraper()
+        global _session_cache
+        
+        if self._needs_session_refresh():
+            self._refresh_session()
+        else:
+            self._scraper = _session_cache['scraper']
+        
+        _session_cache['request_count'] += 1
         return self._scraper
     
     def _safe_get(self, url: str, **kwargs) -> Optional[Any]:
-        """Safe HTTP GET with fallback"""
-        if self.scraper:
-            try:
-                return self.scraper.get(url, **kwargs)
-            except Exception as e:
-                self.log(f"Scraper GET failed: {e}", "WARN")
+        """Safe HTTP GET with fallback and retry on HTML response"""
+        max_retries = 2
+        
+        for attempt in range(max_retries):
+            if self.scraper:
+                try:
+                    response = self.scraper.get(url, **kwargs)
+                    
+                    if response and response.status_code == 200:
+                        content_type = response.headers.get('Content-Type', '').lower()
+                        if 'html' in content_type and len(response.text) < 50000:
+                            if 'download' in url.lower() or 'd.apkpure.com' in url.lower():
+                                self.log(f"Got HTML instead of file on attempt {attempt + 1}, refreshing session...", "WARN")
+                                self._refresh_session()
+                                continue
+                    
+                    return response
+                except Exception as e:
+                    self.log(f"Scraper GET failed (attempt {attempt + 1}): {e}", "WARN")
+                    if attempt < max_retries - 1:
+                        self._refresh_session()
+        
         return None
     
     def _safe_head(self, url: str, **kwargs) -> Optional[Any]:
-        """Safe HTTP HEAD with fallback"""
-        if self.scraper:
-            try:
-                return self.scraper.head(url, **kwargs)
-            except Exception as e:
-                self.log(f"Scraper HEAD failed: {e}", "WARN")
+        """Safe HTTP HEAD with fallback and session refresh"""
+        max_retries = 2
+        
+        for attempt in range(max_retries):
+            if self.scraper:
+                try:
+                    response = self.scraper.head(url, **kwargs)
+                    
+                    if response and response.status_code == 200:
+                        content_type = response.headers.get('Content-Type', '').lower()
+                        if 'html' in content_type:
+                            self.log(f"Got HTML content-type on HEAD, refreshing session...", "WARN")
+                            self._refresh_session()
+                            continue
+                    
+                    return response
+                except Exception as e:
+                    self.log(f"Scraper HEAD failed (attempt {attempt + 1}): {e}", "WARN")
+                    if attempt < max_retries - 1:
+                        self._refresh_session()
+        
         return None
     
     def get_headers(self) -> Dict[str, str]:

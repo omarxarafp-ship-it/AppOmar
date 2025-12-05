@@ -888,6 +888,19 @@ def download_with_aria2(download_url: str, file_path: str, package_name: str) ->
         stats["aria2_failed"] += 1
         return False
 
+MIN_VALID_FILE_SIZE = 500000
+
+def is_html_content(content: bytes) -> bool:
+    """Check if content is HTML (error page) instead of binary file"""
+    if len(content) < MIN_VALID_FILE_SIZE:
+        try:
+            text = content[:1000].decode('utf-8', errors='ignore').lower()
+            if '<html' in text or '<!doctype' in text or '<head' in text:
+                return True
+        except:
+            pass
+    return False
+
 def download_with_curl_cffi(download_url: str, file_path: str, package_name: str) -> bool:
     safari_versions = ["safari15_3", "safari15_5", "safari17_0", "safari17_2_macos"]
     
@@ -902,13 +915,22 @@ def download_with_curl_cffi(download_url: str, file_path: str, package_name: str
             )
             
             if response.status_code == 200:
+                content = response.content
                 content_type = response.headers.get('Content-Type', '')
-                if 'html' not in content_type.lower() or len(response.content) > 500000:
-                    with open(file_path, 'wb') as f:
-                        f.write(response.content)
-                    file_size = os.path.getsize(file_path)
-                    print(f"[curl-cffi] Downloaded {package_name}: {file_size / 1024 / 1024:.2f} MB", file=sys.stderr)
-                    return True
+                
+                if is_html_content(content):
+                    print(f"[curl-cffi] {safari_ver} returned HTML page ({len(content)} bytes), trying next...", file=sys.stderr)
+                    continue
+                
+                if len(content) < MIN_VALID_FILE_SIZE:
+                    print(f"[curl-cffi] {safari_ver} file too small ({len(content)} bytes), trying next...", file=sys.stderr)
+                    continue
+                
+                with open(file_path, 'wb') as f:
+                    f.write(content)
+                file_size = os.path.getsize(file_path)
+                print(f"[curl-cffi] Downloaded {package_name}: {file_size / 1024 / 1024:.2f} MB", file=sys.stderr)
+                return True
             
             print(f"[curl-cffi] {safari_ver} returned {response.status_code}", file=sys.stderr)
             
@@ -918,8 +940,32 @@ def download_with_curl_cffi(download_url: str, file_path: str, package_name: str
     
     return False
 
-async def download_file_to_cache(package_name: str, download_url: str, file_type: str) -> Optional[str]:
+def validate_downloaded_file(file_path: str, package_name: str) -> bool:
+    """Validate downloaded file is not HTML error page"""
+    if not os.path.exists(file_path):
+        return False
+    
+    file_size = os.path.getsize(file_path)
+    
+    if file_size < MIN_VALID_FILE_SIZE:
+        print(f"[Validate] {package_name}: File too small ({file_size} bytes)", file=sys.stderr)
+        
+        try:
+            with open(file_path, 'rb') as f:
+                header = f.read(1000)
+            if is_html_content(header):
+                print(f"[Validate] {package_name}: File contains HTML content!", file=sys.stderr)
+                return False
+        except:
+            pass
+        
+        return False
+    
+    return True
+
+async def download_file_to_cache(package_name: str, download_url: str, file_type: str, retry_count: int = 0) -> Optional[str]:
     lock = get_download_lock(package_name)
+    max_retries = 2
     
     async with lock:
         cache_key = f"{package_name}_{hashlib.md5(download_url.encode()).hexdigest()[:8]}"
@@ -927,14 +973,22 @@ async def download_file_to_cache(package_name: str, download_url: str, file_type
         if cache_key in file_cache:
             cached_info = file_cache[cache_key]
             if os.path.exists(cached_info['file_path']):
-                if cache_key in pending_deletions:
-                    pending_deletions[cache_key].cancel()
-                    del pending_deletions[cache_key]
-                
-                deletion_task = asyncio.create_task(schedule_file_deletion(cached_info['file_path'], 30))
-                pending_deletions[cache_key] = deletion_task
-                
-                return cached_info['file_path']
+                if validate_downloaded_file(cached_info['file_path'], package_name):
+                    if cache_key in pending_deletions:
+                        pending_deletions[cache_key].cancel()
+                        del pending_deletions[cache_key]
+                    
+                    deletion_task = asyncio.create_task(schedule_file_deletion(cached_info['file_path'], 30))
+                    pending_deletions[cache_key] = deletion_task
+                    
+                    return cached_info['file_path']
+                else:
+                    print(f"[Cache] {package_name}: Cached file is invalid, removing...", file=sys.stderr)
+                    try:
+                        os.remove(cached_info['file_path'])
+                    except:
+                        pass
+                    del file_cache[cache_key]
         
         file_id = generate_user_file_id(package_name)
         file_path = os.path.join(DOWNLOADS_DIR, f"{file_id}.{file_type}")
@@ -951,6 +1005,14 @@ async def download_file_to_cache(package_name: str, download_url: str, file_type
                     package_name
                 )
                 
+                if success and not validate_downloaded_file(file_path, package_name):
+                    print(f"[Download] aria2 downloaded invalid file, trying curl-cffi...", file=sys.stderr)
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
+                    success = False
+                
                 if not success:
                     print(f"[Download] aria2 failed, trying curl-cffi...", file=sys.stderr)
                     success = await loop.run_in_executor(
@@ -960,6 +1022,14 @@ async def download_file_to_cache(package_name: str, download_url: str, file_type
                         file_path, 
                         package_name
                     )
+                
+                if success and not validate_downloaded_file(file_path, package_name):
+                    print(f"[Download] curl-cffi downloaded invalid file, trying httpx...", file=sys.stderr)
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
+                    success = False
                 
                 if not success:
                     print(f"[Download] curl-cffi failed, trying httpx...", file=sys.stderr)
@@ -971,7 +1041,7 @@ async def download_file_to_cache(package_name: str, download_url: str, file_type
                             content_type = response.headers.get('Content-Type', '')
                             if 'html' in content_type.lower():
                                 content = await response.aread()
-                                if len(content) < 500000:
+                                if len(content) < MIN_VALID_FILE_SIZE or is_html_content(content):
                                     raise HTTPException(status_code=400, detail="Got HTML instead of file")
                                 async with aiofiles.open(file_path, 'wb') as f:
                                     await f.write(content)
@@ -979,6 +1049,9 @@ async def download_file_to_cache(package_name: str, download_url: str, file_type
                                 async with aiofiles.open(file_path, 'wb') as f:
                                     async for chunk in response.aiter_bytes(chunk_size=131072):
                                         await f.write(chunk)
+                    
+                    if not validate_downloaded_file(file_path, package_name):
+                        raise HTTPException(status_code=400, detail="Downloaded file is invalid (HTML or too small)")
                 
                 file_size = os.path.getsize(file_path)
                 
@@ -1000,6 +1073,13 @@ async def download_file_to_cache(package_name: str, download_url: str, file_type
             except Exception as e:
                 if os.path.exists(file_path):
                     os.remove(file_path)
+                
+                if retry_count < max_retries and "HTML" in str(e):
+                    print(f"[Download] Got HTML response, clearing cache and retrying ({retry_count + 1}/{max_retries})...", file=sys.stderr)
+                    if package_name in url_cache:
+                        del url_cache[package_name]
+                    return None
+                
                 raise e
             finally:
                 stats["active_downloads"] -= 1
@@ -1164,35 +1244,70 @@ async def batch_download(packages: List[str]) -> Dict[str, Any]:
 
 @app.get("/download/{package_name}")
 async def download_apk(package_name: str, background_tasks: BackgroundTasks, user_id: Optional[str] = None):
-    try:
-        info = await get_download_info(package_name)
-        download_url = info['download_url']
-        file_type = info.get('file_type', 'apk')
-        
-        file_path = await download_file_to_cache(package_name, download_url, file_type)
-        
-        if not file_path or not os.path.exists(file_path):
-            raise HTTPException(status_code=500, detail="Failed to download file")
-        
-        filename = f"{package_name}.{file_type}"
-        
-        return FileResponse(
-            path=file_path,
-            filename=filename,
-            media_type="application/vnd.android.package-archive",
-            headers={
-                "X-Source": str(info.get('source', 'apkpure')),
-                "X-File-Type": file_type,
-                "X-File-Size": str(os.path.getsize(file_path)),
-                "Cache-Control": "no-cache"
-            }
-        )
+    max_retries = 3
+    last_error = None
+    
+    for retry in range(max_retries):
+        try:
+            if retry > 0:
+                print(f"[Download] Retry {retry}/{max_retries} for {package_name}, clearing cache...", file=sys.stderr)
+                if package_name in url_cache:
+                    del url_cache[package_name]
             
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[Error] {package_name}: {e}", file=sys.stderr)
-        raise HTTPException(status_code=500, detail=str(e))
+            info = await get_download_info(package_name)
+            download_url = info['download_url']
+            file_type = info.get('file_type', 'apk')
+            
+            file_path = await download_file_to_cache(package_name, download_url, file_type, retry_count=retry)
+            
+            if not file_path or not os.path.exists(file_path):
+                last_error = "Failed to download file"
+                continue
+            
+            file_size = os.path.getsize(file_path)
+            if file_size < MIN_VALID_FILE_SIZE:
+                print(f"[Download] File too small ({file_size} bytes), retrying...", file=sys.stderr)
+                try:
+                    os.remove(file_path)
+                except:
+                    pass
+                last_error = f"File too small ({file_size} bytes)"
+                continue
+            
+            with open(file_path, 'rb') as f:
+                header = f.read(100)
+            if is_html_content(header + b'\x00' * 900):
+                print(f"[Download] Got HTML content, retrying...", file=sys.stderr)
+                try:
+                    os.remove(file_path)
+                except:
+                    pass
+                last_error = "Got HTML instead of APK"
+                continue
+            
+            filename = f"{package_name}.{file_type}"
+            
+            return FileResponse(
+                path=file_path,
+                filename=filename,
+                media_type="application/vnd.android.package-archive",
+                headers={
+                    "X-Source": str(info.get('source', 'apkpure')),
+                    "X-File-Type": file_type,
+                    "X-File-Size": str(file_size),
+                    "Cache-Control": "no-cache"
+                }
+            )
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            last_error = str(e)
+            print(f"[Error] {package_name} (attempt {retry + 1}): {e}", file=sys.stderr)
+            if retry < max_retries - 1:
+                await asyncio.sleep(1)
+    
+    raise HTTPException(status_code=500, detail=f"Download failed after {max_retries} attempts: {last_error}")
 
 @app.get("/file/{package_name}")
 async def get_cached_file(package_name: str):

@@ -11,6 +11,48 @@ const { Pool } = pkg;
 import { request } from 'undici';
 import sharp from 'sharp';
 import AdmZip from 'adm-zip';
+import config from './config.js';
+
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+const suppressPatterns = [
+    /Closing session/,
+    /SessionEntry/,
+    /_chains:/,
+    /registrationId:/,
+    /currentRatchet:/,
+    /ephemeralKeyPair:/,
+    /lastRemoteEphemeralKey:/,
+    /previousCounter:/,
+    /rootKey:/,
+    /indexInfo:/,
+    /baseKey:/,
+    /pendingPreKey:/,
+    /signedKeyId:/,
+    /preKeyId:/,
+    /chainKey:/,
+    /chainType:/,
+    /messageKeys:/,
+    /remoteIdentityKey:/,
+    /<Buffer/,
+    /Failed to decrypt message/,
+    /Session error/,
+    /Bad MAC/
+];
+
+console.log = (...args) => {
+    const message = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    if (!suppressPatterns.some(pattern => pattern.test(message))) {
+        originalConsoleLog.apply(console, args);
+    }
+};
+
+console.error = (...args) => {
+    const message = args.map(a => typeof a === 'string' ? a : (a?.message || JSON.stringify(a))).join(' ');
+    if (!suppressPatterns.some(pattern => pattern.test(message))) {
+        originalConsoleError.apply(console, args);
+    }
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -161,14 +203,6 @@ const logger = pino({
     }
 });
 
-const DEVELOPER_PHONES = ['212718938088', '234905250308102'];
-const BOT_PROFILE_IMAGE_URL = 'https://i.ibb.co/fYXc7sQx/Screenshot-2025-12-03-16-15-57-737-com-android-chrome-edit.jpg';
-const INSTAGRAM_URL = 'https://www.instagram.com/omarxarafp \n\n رابط القناة \n https://whatsapp.com/channel/0029VbBUsqSEVccOQaMEtm0n';
-const POWERED_BY = '\n\n> © من طرف AppOmar';
-const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
-
-const ZARCHIVER_PACKAGE = 'ru.zdevs.zarchiver';
-
 function getZipObbTutorial(fileName, packageId) {
     const appName = fileName.replace(/\.(zip|xapk|apk)$/i, '');
     return `
@@ -240,23 +274,25 @@ const blockedNumbers = new Set();
 const vipUsers = new Set();
 const hourlyMessageTracker = new Map();
 const downloadMessageTracker = new Map();
+const fastMessageTracker = new Map();
 const groupMetadataCache = new Map();
 const messageStore = new Map();
 const lidToPhoneMap = new Map();
-const VIP_PASSWORD = 'Omar';
+
+const DEVELOPER_PHONES = config.developer.phones;
+const BOT_PROFILE_IMAGE_URL = config.bot.profileImageUrl;
+const INSTAGRAM_URL = `${config.developer.instagramUrl} \n\n رابط القناة \n ${config.developer.channelUrl}`;
+const POWERED_BY = config.developer.poweredBy;
+const MAX_FILE_SIZE = config.bot.maxFileSize;
+const ZARCHIVER_PACKAGE = config.bot.zarchiverPackage;
+const VIP_PASSWORD = config.bot.vipPassword;
 
 const USER_LIMITS = {
-    authenticated: {
-        messageDelay: 1000,
-        maxConcurrentDownloads: 10,
-        messagesPerHour: 25
-    },
-    unauthenticated: {
-        messageDelay: 3000,
-        maxConcurrentDownloads: 3,
-        messagesPerHour: 20
-    }
+    authenticated: config.delays.authenticated,
+    unauthenticated: config.delays.unauthenticated
 };
+
+const SPAM_LIMITS = config.limits.spam;
 
 let botPresenceMode = 'unavailable'; // 'unavailable' or 'available'
 let presenceInterval = null;
@@ -714,8 +750,39 @@ async function updateUserActivity(phone, userName) {
     } catch (error) {}
 }
 
+function checkFastSpam(phone) {
+    if (isDeveloper(phone)) return 'ok';
+    if (vipUsers.has(phone)) return 'ok';
+    
+    const now = Date.now();
+    const fastWindow = SPAM_LIMITS.fastMessageWindow || 10000;
+    const fastLimit = SPAM_LIMITS.fastMessages || 5;
+    
+    let tracker = fastMessageTracker.get(phone);
+    if (!tracker) {
+        tracker = { messages: [] };
+        fastMessageTracker.set(phone, tracker);
+    }
+    
+    tracker.messages = tracker.messages.filter(t => now - t < fastWindow);
+    tracker.messages.push(now);
+    
+    if (tracker.messages.length > fastLimit) {
+        console.log(`🚨 سبيام سريع من ${phone}: ${tracker.messages.length} رسائل ف${fastWindow / 1000} ثواني`);
+        return 'block';
+    }
+    
+    if (tracker.messages.length >= fastLimit - 1) {
+        return 'warning';
+    }
+    
+    return 'ok';
+}
+
 function checkHourlySpam(phone) {
     if (isDeveloper(phone)) return 'ok';
+    if (vipUsers.has(phone)) return 'ok';
+    
     const now = Date.now();
     const oneHour = 60 * 60 * 1000;
     let tracker = hourlyMessageTracker.get(phone);
@@ -725,8 +792,9 @@ function checkHourlySpam(phone) {
     }
     tracker.messages = tracker.messages.filter(t => now - t < oneHour);
     tracker.messages.push(now);
-    const limits = getUserLimits(phone);
-    if (tracker.messages.length > limits.messagesPerHour) {
+    
+    const hourlyLimit = SPAM_LIMITS.messagesPerHour || 25;
+    if (tracker.messages.length > hourlyLimit) {
         return 'block';
     }
     return 'ok';
@@ -1095,9 +1163,18 @@ async function processRequest(sock, from, task) {
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('session');
 
+    const silentLogger = pino({ 
+        level: 'silent',
+        hooks: {
+            logMethod(inputArgs, method) {
+                return method.apply(this, inputArgs);
+            }
+        }
+    });
+
     const sock = makeWASocket({
         auth: state,
-        logger: pino({ level: 'fatal' }),
+        logger: silentLogger,
         printQRInTerminal: false,
         browser: ['Ubuntu', 'Chrome', '1.0.0'],
         syncFullHistory: false,
@@ -1110,6 +1187,7 @@ async function connectToWhatsApp() {
         emitOwnEvents: false,
         printQRCode: false,
         shouldIgnoreJid: () => false,
+        patchMessageBeforeSending: (msg) => msg,
         cachedGroupMetadata: async (jid) => {
             const cached = groupMetadataCache.get(jid);
             if (cached && Date.now() - cached.timestamp < 300000) {
