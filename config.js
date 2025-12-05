@@ -10,7 +10,7 @@ const config = {
         instagramUrl: '',
         channelUrl: 'https://whatsapp.com/channel/0029VbBUsqSEVccOQaMEtm0n',
         poweredBy: '\n\n> © من طرف AppOmar',
-        pluginBranding: `\n\n📲 *AppOmar Bot*\n🔗 https://whatsapp.com/channel/0029VbBUsqSEVccOQaMEtm0n`
+        pluginBranding: `\n\n📢 *انضم لقناتنا على واتساب*\n🔗 https://whatsapp.com/channel/0029VbBUsqSEVccOQaMEtm0n\n\n> © من طرف APPOMAR`
     },
 
     // إعدادات البوت
