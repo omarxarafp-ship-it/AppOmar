@@ -11,3 +11,10 @@ psycopg2-binary>=2.9.9
 python-multipart>=0.0.6
 trafilatura>=1.6.0
 uvicorn>=0.27.0
+aiofiles
+aria2p
+beautifulsoup4
+curl-cffi
+fastapi
+httpx
+uvicorn
