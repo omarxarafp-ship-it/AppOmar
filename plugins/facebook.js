@@ -5,6 +5,7 @@ export default {
     patterns: [
         /facebook\.com\/.*\/videos\//i,
         /facebook\.com\/watch/i,
+        /facebook\.com\/share/i,
         /fb\.watch/i,
         /fb\.com/i
     ],
