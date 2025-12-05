@@ -4,7 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["aria2", "xcodebuild", "zlib"]
+packages = ["aria2", "xcodebuild", "zlib", "ffmpeg"]
 
 [workflows]
 runButton = "Project"

@@ -9,7 +9,8 @@ const config = {
         phones: ['212718938088', '234905250308102'],
         instagramUrl: '',
         channelUrl: 'https://whatsapp.com/channel/0029VbBUsqSEVccOQaMEtm0n',
-        poweredBy: '\n\n> © من طرف AppOmar'
+        poweredBy: '\n\n> © من طرف AppOmar',
+        pluginBranding: `\n\n📲 *AppOmar Bot*\n🔗 https://whatsapp.com/channel/0029VbBUsqSEVccOQaMEtm0n`
     },
 
     // إعدادات البوت

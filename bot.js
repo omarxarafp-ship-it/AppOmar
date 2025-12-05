@@ -70,7 +70,7 @@ async function handlePluginUrl(sock, remoteJid, url, msg, senderPhone) {
     console.log(`🔌 Plugin يعالج: ${plugin.name} - ${url}`);
     
     const utils = {
-        poweredBy: config.developer.poweredBy,
+        poweredBy: config.developer.pluginBranding,
         react: async (sock, msg, emoji) => {
             try {
                 await sock.sendMessage(remoteJid, { react: { text: emoji, key: msg.key } });
