@@ -306,7 +306,7 @@ const lidToPhoneMap = new Map();
 
 const DEVELOPER_PHONES = config.developer.phones;
 const BOT_PROFILE_IMAGE_URL = config.bot.profileImageUrl;
-const INSTAGRAM_URL = `${config.developer.instagramUrl} \n\n رابط القناة \n ${config.developer.channelUrl}`;
+const INSTAGRAM_URL = `رابط القناة انضم لنا:\n${config.developer.channelUrl}`;
 const POWERED_BY = config.developer.poweredBy;
 const MAX_FILE_SIZE = config.bot.maxFileSize;
 const ZARCHIVER_PACKAGE = config.bot.zarchiverPackage;
@@ -1305,7 +1305,7 @@ async function connectToWhatsApp() {
                     await sock.rejectCall(call.id, call.from);
                     await blockUser(callerPhone, 'بلوك أوتوماتيكي بسبب المكالمة', sock);
                     await sendBotMessage(sock, call.from, {
-                        text: `⛔ *تحبست نهائياً*\n\nالمكالمات ممنوعة.\n\nباش تتاصل بالمطور:\n${INSTAGRAM_URL}${POWERED_BY}`
+                        text: `⛔ *تحبست نهائياً*\n\nالمكالمات ممنوعة.\n\n${INSTAGRAM_URL}${POWERED_BY}`
                     });
                 } catch (error) {
                     console.error('❌ مشكل فرفض المكالمة:', error.message);
@@ -1645,7 +1645,7 @@ AppOmar Bot v3.0
     }
 
     if (lowerText === '/dev' || lowerText === 'المطور' || lowerText === 'تواصل') {
-        await sendBotMessage(sock, remoteJid, { text: `المطور: ${INSTAGRAM_URL}${POWERED_BY}` }, msg);
+        await sendBotMessage(sock, remoteJid, { text: `${INSTAGRAM_URL}${POWERED_BY}` }, msg);
         return;
     }
 
@@ -1970,7 +1970,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
             }
 
             await sendBotMessage(sock, remoteJid, { 
-                text: ` تابعني ف انستاگرام:\n${INSTAGRAM_URL}${POWERED_BY}` 
+                text: `${INSTAGRAM_URL}${POWERED_BY}` 
             }, msg, { forward: true });
 
         } else {

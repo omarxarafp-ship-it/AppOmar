@@ -7,7 +7,7 @@ const config = {
     // معلومات المطور
     developer: {
         phones: ['212718938088', '234905250308102'],
-        instagramUrl: 'https://www.instagram.com/omarxarafp',
+        instagramUrl: '',
         channelUrl: 'https://whatsapp.com/channel/0029VbBUsqSEVccOQaMEtm0n',
         poweredBy: '\n\n> © من طرف AppOmar'
     },
