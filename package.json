@@ -20,6 +20,7 @@
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "adm-zip": "^0.5.16",
+    "axios": "^1.13.2",
     "google-play-scraper": "^10.1.2",
     "node-fetch": "^3.3.2",
     "pg": "^8.16.3",

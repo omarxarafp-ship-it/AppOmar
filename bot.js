@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import pkg from 'pg';
 const { Pool } = pkg;
 import { request } from 'undici';
+import axios from 'axios';
 import sharp from 'sharp';
 import AdmZip from 'adm-zip';
 import config from './config.js';
@@ -16,7 +17,10 @@ import config from './config.js';
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 const suppressPatterns = [
-    /Closing session/,
+    /Closing session/i,
+    /Closing open session/i,
+    /in favor of incoming/i,
+    /prekey bundle/i,
     /SessionEntry/,
     /_chains:/,
     /registrationId:/,
@@ -35,20 +39,41 @@ const suppressPatterns = [
     /messageKeys:/,
     /remoteIdentityKey:/,
     /<Buffer/,
+    /Buffer </,
+    /privKey:/,
+    /pubKey:/,
+    /closed:/,
+    /used:/,
+    /created:/,
+    /baseKeyType:/,
     /Failed to decrypt message/,
     /Session error/,
     /Bad MAC/
 ];
 
+const stringifyArg = (a) => {
+    if (typeof a === 'string') return a;
+    if (a === null || a === undefined) return '';
+    if (a instanceof Error) return a.message || '';
+    try {
+        return JSON.stringify(a, (key, value) => {
+            if (Buffer.isBuffer(value)) return '<Buffer>';
+            return value;
+        });
+    } catch {
+        return String(a);
+    }
+};
+
 console.log = (...args) => {
-    const message = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    const message = args.map(stringifyArg).join(' ');
     if (!suppressPatterns.some(pattern => pattern.test(message))) {
         originalConsoleLog.apply(console, args);
     }
 };
 
 console.error = (...args) => {
-    const message = args.map(a => typeof a === 'string' ? a : (a?.message || JSON.stringify(a))).join(' ');
+    const message = args.map(stringifyArg).join(' ');
     if (!suppressPatterns.some(pattern => pattern.test(message))) {
         originalConsoleError.apply(console, args);
     }
@@ -402,7 +427,13 @@ async function sendBotMessage(sock, remoteJid, content, originalMsg = null, opti
         senderPhone = extractPhoneFromMessage(originalMsg);
     }
     
-    await humanDelay(senderPhone);
+    const isSticker = content.sticker !== undefined;
+    const isSearchResult = options.isSearchResult || false;
+    const skipDelay = isSticker || isSearchResult || options.skipDelay;
+    
+    if (!skipDelay) {
+        await humanDelay(senderPhone);
+    }
 
     const messageContent = { ...content };
 
@@ -492,64 +523,6 @@ async function setBotProfile(sock) {
     }
 }
 
-async function notifyDeveloperNewUser(sock, userInfo, firstMessage) {
-    try {
-        if (!userInfo || !userInfo.phone) {
-            console.log('⚠️ معلومات المستخدم غير كاملة، لن يتم الإبلاغ');
-            return;
-        }
-
-        console.log(`📤 كنحاول نبلغ المطورين عن مستخدم جديد: ${userInfo.phone}`);
-
-        const now = new Date();
-        const dateStr = now.toLocaleString('ar-EG', { 
-            timeZone: 'Africa/Casablanca',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-        
-        const safeFirstMessage = firstMessage || '(لا توجد رسالة)';
-        
-        const notifyText = `🆕 *مستخدم جديد!*
-
-👤 الاسم: ${userInfo.name || 'غير معروف'}
-📱 الرقم: +${userInfo.phone}${userInfo.status ? `\n📝 الحالة: ${userInfo.status}` : ''}
-💬 أول رسالة: ${safeFirstMessage}
-🕐 الوقت: ${dateStr}`;
-
-        let successCount = 0;
-        for (const devPhone of DEVELOPER_PHONES) {
-            try {
-                const devJid = `${devPhone}@s.whatsapp.net`;
-                console.log(`📨 كنصيفط إبلاغ لـ: ${devPhone}`);
-                
-                if (userInfo.profilePic) {
-                    await sock.sendMessage(devJid, {
-                        image: userInfo.profilePic,
-                        caption: notifyText
-                    });
-                } else {
-                    await sock.sendMessage(devJid, { text: notifyText });
-                }
-                successCount++;
-                console.log(`✅ تم إرسال الإبلاغ لـ: ${devPhone}`);
-            } catch (devError) {
-                console.error(`❌ فشل إرسال لـ ${devPhone}:`, devError.message);
-            }
-        }
-        
-        if (successCount > 0) {
-            console.log(`📨 تم إبلاغ ${successCount}/${DEVELOPER_PHONES.length} مطورين عن مستخدم جديد: ${userInfo.phone}`);
-        } else {
-            console.log(`⚠️ لم يتم إبلاغ أي مطور عن: ${userInfo.phone}`);
-        }
-    } catch (error) {
-        console.error('❌ مشكل فإبلاغ المطور:', error.message);
-    }
-}
 
 async function getUserProfileInfo(sock, jid, senderPhone, userName) {
     const userInfo = {
@@ -1039,52 +1012,37 @@ async function handleZArchiverDownload(sock, remoteJid, userId, senderPhone, msg
     }
 }
 
-async function downloadAPKWithUndici(packageName, appTitle) {
+async function downloadAPKWithAxios(packageName, appTitle) {
     const API_URL = process.env.API_URL || 'http://localhost:8000';
 
-    console.log(`📥 كننزّل باستعمال Undici (أسرع 3x)...`);
+    console.log(`📥 كننزّل باستعمال Axios (سريع)...`);
 
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
             console.log(`   محاولة ${attempt + 1}/3...`);
 
-            const { statusCode, headers, body } = await request(`${API_URL}/download/${packageName}`, {
+            const startTime = Date.now();
+            const response = await axios({
                 method: 'GET',
-                headersTimeout: 600000,
-                bodyTimeout: 600000
+                url: `${API_URL}/download/${packageName}`,
+                responseType: 'arraybuffer',
+                timeout: 600000,
+                maxContentLength: MAX_FILE_SIZE,
+                maxBodyLength: MAX_FILE_SIZE,
+                onDownloadProgress: (progressEvent) => {
+                    if (progressEvent.total) {
+                        const progress = ((progressEvent.loaded / progressEvent.total) * 100).toFixed(0);
+                        process.stdout.write(`\r   ⬇️  ${(progressEvent.loaded / 1024 / 1024).toFixed(1)}MB / ${(progressEvent.total / 1024 / 1024).toFixed(1)}MB (${progress}%)`);
+                    } else {
+                        process.stdout.write(`\r   ⬇️  ${(progressEvent.loaded / 1024 / 1024).toFixed(1)}MB تم تحميله...`);
+                    }
+                }
             });
 
-            if (statusCode !== 200) throw new Error(`HTTP ${statusCode}`);
-
-            const fileType = headers['x-file-type'] || 'apk';
-            const source = headers['x-source'] || 'apkpure';
-            const contentLength = parseInt(headers['content-length'] || '0');
-
-            // Check file size BEFORE downloading
-            if (contentLength > MAX_FILE_SIZE) {
-                console.log(`\n❌ الملف كبير بزاف: ${formatFileSize(contentLength)}`);
-                // Close the body stream without reading it
-                await body.dump();
-                throw new Error(`FILE_TOO_LARGE:${contentLength}`);
-            }
-
-            const chunks = [];
-            let downloadedBytes = 0;
-            const startTime = Date.now();
-
-            for await (const chunk of body) {
-                chunks.push(chunk);
-                downloadedBytes += chunk.length;
-                if (contentLength > 0) {
-                    const progress = ((downloadedBytes / contentLength) * 100).toFixed(0);
-                    process.stdout.write(`\r   ⬇️  ${(downloadedBytes / 1024 / 1024).toFixed(1)}MB / ${(contentLength / 1024 / 1024).toFixed(1)}MB (${progress}%)`);
-                } else {
-                    process.stdout.write(`\r   ⬇️  ${(downloadedBytes / 1024 / 1024).toFixed(1)}MB تم تحميله...`);
-                }
-            }
-
-            const buffer = Buffer.concat(chunks);
+            const buffer = Buffer.from(response.data);
             const fileSize = buffer.length;
+            const fileType = response.headers['x-file-type'] || 'apk';
+            const source = response.headers['x-source'] || 'apkpure';
             const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
             const speed = (fileSize / 1024 / 1024 / parseFloat(elapsedTime)).toFixed(2);
 
@@ -1094,24 +1052,23 @@ async function downloadAPKWithUndici(packageName, appTitle) {
             console.log(`\n✅ تّحمل من ${source}: ${formatFileSize(fileSize)} | السرعة: ${speed} MB/s`);
 
             if (buffer.length > 100000) {
-    return { buffer, filename, size: fileSize, fileType };
+                return { buffer, filename, size: fileSize, fileType };
             }
 
             throw new Error('الملف المحمل صغير بزاف');
 
         } catch (error) {
             console.log(`\n   ❌ المحاولة ${attempt + 1} فشلات: ${error.message}`);
-            if (error.message.startsWith('FILE_TOO_LARGE')) {
-                // If file is too large, no need to retry
+            if (error.message.includes('maxContentLength') || error.message.includes('FILE_TOO_LARGE')) {
                 break;
             }
             if (attempt < 2) {
-                await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+                await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
             }
         }
     }
 
-    console.log(`📥 غادي نستعمل طريقة بديلة (cloudscraper)...`);
+    console.log(`📥 غادي نستعمل طريقة بديلة...`);
     return await downloadAPKStreamFallback(packageName, appTitle);
 }
 
@@ -1176,17 +1133,18 @@ async function connectToWhatsApp() {
         auth: state,
         logger: silentLogger,
         printQRInTerminal: false,
-        browser: ['Ubuntu', 'Chrome', '1.0.0'],
+        browser: Browsers.ubuntu('Chrome'),
         syncFullHistory: false,
         markOnlineOnConnect: false,
         generateHighQualityLinkPreview: false,
         defaultQueryTimeoutMs: 120000,
-        keepAliveIntervalMs: 55000,
+        keepAliveIntervalMs: 30000,
         connectTimeoutMs: 60000,
         retryRequestDelayMs: 2000,
         emitOwnEvents: false,
-        printQRCode: false,
-        shouldIgnoreJid: () => false,
+        fireInitQueries: true,
+        shouldSyncHistoryMessage: () => false,
+        transactionOpts: { maxCommitRetries: 10, delayBetweenTriesMs: 3000 },
         patchMessageBeforeSending: (msg) => msg,
         cachedGroupMetadata: async (jid) => {
             const cached = groupMetadataCache.get(jid);
@@ -1462,11 +1420,7 @@ async function handleMessage(sock, remoteJid, userId, senderPhone, text, msg, us
     if (isNewUser && session.firstTime) {
         session.firstTime = false;
 
-        // Fetch user profile info
         const userInfo = await getUserProfileInfo(sock, remoteJid, senderPhone, userName);
-
-        // إبلاغ المطور عن المستخدم الجديد
-        await notifyDeveloperNewUser(sock, userInfo, text);
 
         const welcomeText = `*بوت AppOmar*
 
@@ -1763,16 +1717,16 @@ AppOmar Bot v3.0
             const imageBuffer = await downloadBotProfileImage();
             let sentMsg;
             if (imageBuffer) {
-                sentMsg = await sendBotMessage(sock, remoteJid, { image: imageBuffer, caption: resultText }, msg);
+                sentMsg = await sendBotMessage(sock, remoteJid, { image: imageBuffer, caption: resultText }, msg, { skipDelay: true });
             } else {
-                sentMsg = await sendBotMessage(sock, remoteJid, { text: resultText }, msg);
+                sentMsg = await sendBotMessage(sock, remoteJid, { text: resultText }, msg, { skipDelay: true });
             }
             session.lastListMessageKey = sentMsg?.key;
             userSessions.set(userId, session);
 
         } catch (error) {
             console.error('❌ مشكل فالبحث:', error);
-            await sendBotMessage(sock, remoteJid, { text: `❌ وقع مشكل فالبحث. عاود المحاولة.${POWERED_BY}` }, msg);
+            await sendBotMessage(sock, remoteJid, { text: `❌ وقع مشكل فالبحث. عاود المحاولة.${POWERED_BY}` }, msg, { skipDelay: true });
         }
 
     } else if (session.state === 'waiting_for_selection') {
@@ -1839,16 +1793,16 @@ AppOmar Bot v3.0
                 const imageBuffer = await downloadBotProfileImage();
                 let sentMsg;
                 if (imageBuffer) {
-                    sentMsg = await sendBotMessage(sock, remoteJid, { image: imageBuffer, caption: resultText }, msg);
+                    sentMsg = await sendBotMessage(sock, remoteJid, { image: imageBuffer, caption: resultText }, msg, { skipDelay: true });
                 } else {
-                    sentMsg = await sendBotMessage(sock, remoteJid, { text: resultText }, msg);
+                    sentMsg = await sendBotMessage(sock, remoteJid, { text: resultText }, msg, { skipDelay: true });
                 }
                 session.lastListMessageKey = sentMsg?.key;
                 userSessions.set(userId, session);
 
             } catch (error) {
                 console.error('❌ مشكل فالبحث:', error);
-                await sendBotMessage(sock, remoteJid, { text: `❌ وقع مشكل فالبحث. عاود المحاولة.${POWERED_BY}` }, msg);
+                await sendBotMessage(sock, remoteJid, { text: `❌ وقع مشكل فالبحث. عاود المحاولة.${POWERED_BY}` }, msg, { skipDelay: true });
             }
             return;
         }
@@ -1916,7 +1870,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
 
         await sock.sendMessage(remoteJid, { react: { text: '📥', key: msg.key } });
 
-        const apkStream = await downloadAPKWithUndici(appDetails.appId, appDetails.title);
+        const apkStream = await downloadAPKWithAxios(appDetails.appId, appDetails.title);
 
         if (apkStream) {
             if (apkStream.size > MAX_FILE_SIZE) {
