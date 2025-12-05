@@ -46,43 +46,57 @@ async function loadPlugins() {
 function extractUrl(text) {
     const urlRegex = /(https?:\/\/[^\s]+)/gi;
     const matches = text.match(urlRegex);
-    return matches ? matches[0] : null;
+    const url = matches ? matches[0] : null;
+    if (url) {
+        console.log(`🔗 تم استخراج رابط: ${url}`);
+    }
+    return url;
 }
 
 function findMatchingPlugin(url) {
+    console.log(`🔍 البحث عن plugin للرابط: ${url}`);
     for (const plugin of loadedPlugins) {
         for (const pattern of plugin.patterns) {
             if (pattern.test(url)) {
+                console.log(`✅ تم العثور على plugin: ${plugin.name}`);
                 return plugin;
             }
         }
     }
+    console.log(`❌ لم يتم العثور على plugin للرابط`);
     return null;
 }
 
 async function handlePluginUrl(sock, remoteJid, url, msg, senderPhone) {
+    console.log(`🔌 محاولة معالجة الرابط بواسطة plugin: ${url}`);
+    
     const plugin = findMatchingPlugin(url);
     
     if (!plugin) {
+        console.log(`⚠️ لا يوجد plugin مناسب للرابط: ${url}`);
         return false;
     }
     
-    console.log(`🔌 Plugin يعالج: ${plugin.name} - ${url}`);
+    console.log(`🎯 Plugin سيعالج: ${plugin.name} - ${url}`);
     
     const utils = {
         poweredBy: config.developer.pluginBranding,
         react: async (sock, msg, emoji) => {
             try {
                 await sock.sendMessage(remoteJid, { react: { text: emoji, key: msg.key } });
-            } catch (e) {}
+            } catch (e) {
+                console.error(`❌ فشل إرسال تفاعل:`, e.message);
+            }
         }
     };
     
     try {
         await plugin.handler(sock, remoteJid, url, msg, utils);
+        console.log(`✅ تمت معالجة الرابط بنجاح بواسطة ${plugin.name}`);
         return true;
     } catch (error) {
         console.error(`❌ خطأ في plugin ${plugin.name}:`, error.message);
+        console.error(error);
         return false;
     }
 }
