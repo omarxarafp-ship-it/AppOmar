@@ -1,0 +1,65 @@
+import fetch from 'node-fetch';
+
+export default {
+    name: 'Facebook Downloader',
+    patterns: [
+        /facebook\.com\/.*\/videos\//i,
+        /facebook\.com\/watch/i,
+        /fb\.watch/i,
+        /fb\.com/i
+    ],
+    
+    async handler(sock, remoteJid, url, msg, utils) {
+        try {
+            await utils.react(sock, msg, '⏳');
+            
+            const result = await fb(url);
+            
+            if (!result || !result.success) {
+                throw new Error('فشل في جلب الفيديو');
+            }
+
+            const videoUrl = result.links['Download High Quality'] || result.links['Download Low Quality'];
+            
+            if (!videoUrl) {
+                throw new Error('لم يتم العثور على رابط التحميل');
+            }
+
+            await utils.react(sock, msg, '✅');
+            
+            await sock.sendMessage(remoteJid, {
+                video: { url: videoUrl },
+                caption: `📘 *Facebook*\n${result.title || ''}\n\n${utils.poweredBy}`
+            }, { quoted: msg });
+
+            return true;
+        } catch (error) {
+            console.error('Facebook Error:', error.message);
+            await utils.react(sock, msg, '❌');
+            await sock.sendMessage(remoteJid, {
+                text: `❌ فشل تحميل فيديو Facebook\n${utils.poweredBy}`
+            }, { quoted: msg });
+            return false;
+        }
+    }
+};
+
+async function fb(vid_url) {
+    try {
+        const searchParams = new URLSearchParams();
+        searchParams.append('url', vid_url);
+        
+        const response = await fetch('https://facebook-video-downloader.fly.dev/app/main.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: searchParams.toString(),
+            timeout: 30000
+        });
+        
+        return await response.json();
+    } catch (e) {
+        return null;
+    }
+}
