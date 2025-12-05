@@ -1476,6 +1476,15 @@ async function handleMessage(sock, remoteJid, userId, senderPhone, text, msg, us
         return;
     }
 
+    // التحقق من الروابط أولاً قبل أي شيء آخر
+    const extractedUrl = extractUrl(text);
+    if (extractedUrl) {
+        const handled = await handlePluginUrl(sock, remoteJid, extractedUrl, msg, senderPhone);
+        if (handled) {
+            return;
+        }
+    }
+
     if (lowerText === 'zarchiver' || lowerText === 'زارشيفر') {
         session.state = 'waiting_for_selection';
         session.searchResults = [{ title: 'ZArchiver', appId: ZARCHIVER_PACKAGE, developer: 'ZDevs', score: 4.5, index: 1 }];
@@ -1488,14 +1497,6 @@ async function handleMessage(sock, remoteJid, userId, senderPhone, text, msg, us
         // تنزيل ZArchiver مباشرة كـ APK (وليس XAPK)
         await handleZArchiverDownload(sock, remoteJid, userId, senderPhone, msg, session);
         return;
-    }
-
-    const extractedUrl = extractUrl(text);
-    if (extractedUrl) {
-        const handled = await handlePluginUrl(sock, remoteJid, extractedUrl, msg, senderPhone);
-        if (handled) {
-            return;
-        }
     }
 
     if (isNewUser && session.firstTime) {
