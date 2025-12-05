@@ -1,0 +1,22 @@
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+env/
+venv/
+
+# System
+.DS_Store
+
+# Local app caches and downloads
+app_cache/
+downloads/
+
+# Session credentials and keys (WhatsApp sessions)
+session/creds.json
+session/*.json
+
+# Logs
+*.log

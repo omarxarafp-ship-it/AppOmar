@@ -47,7 +47,7 @@ def get_download_info(package_name: str) -> dict:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("الاستخدام: python3 scrap.py <package_name>", file=sys.stderr)
+        print("طريقة الاستعمال: python3 scrap.py <package_name>", file=sys.stderr)
         print("مثال: python3 scrap.py com.dts.freefireth", file=sys.stderr)
         sys.exit(1)
     

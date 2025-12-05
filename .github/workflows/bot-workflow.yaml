@@ -1,0 +1,50 @@
+name: Bot CI/CD Workflow
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-and-deploy:
+    name: Test and Deploy Bot
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run bot smoke test
+        run: |
+          nohup npm run dev > bot.log 2>&1 &
+          sleep 5
+          if ps -p $(cat bot.pid) > /dev/null; then
+            echo "Bot is running successfully."
+            kill $(cat bot.pid)
+          else
+            echo "Bot failed to start. Check logs."
+            cat bot.log
+            exit 1
+          fi
