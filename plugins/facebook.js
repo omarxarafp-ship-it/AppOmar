@@ -14,10 +14,13 @@ export default {
         try {
             await utils.react(sock, msg, '⏳');
             
+            console.log(`📘 محاولة تحميل فيديو Facebook: ${url}`);
             const result = await fb(url);
             
-            if (!result || !result.success) {
-                throw new Error('فشل في جلب الفيديو');
+            console.log(`📘 النتيجة:`, JSON.stringify(result, null, 2));
+            
+            if (!result || !result.success || !result.links) {
+                throw new Error('فشل في جلب الفيديو - API رجع بيانات فارغة');
             }
 
             const videoUrl = result.links['Download High Quality'] || result.links['Download Low Quality'];
@@ -38,7 +41,7 @@ export default {
             console.error('Facebook Error:', error.message);
             await utils.react(sock, msg, '❌');
             await sock.sendMessage(remoteJid, {
-                text: `❌ فشل تحميل فيديو Facebook\n${utils.poweredBy}`
+                text: `❌ فشل تحميل فيديو Facebook\n\n💡 السبب: روابط facebook.com/share غير مدعومة حاليا\nجرب رابط الفيديو العادي (facebook.com/watch أو facebook.com/.../videos/)\n\n${utils.poweredBy}`
             }, { quoted: msg });
             return false;
         }
