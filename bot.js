@@ -14,6 +14,79 @@ import sharp from 'sharp';
 import AdmZip from 'adm-zip';
 import config from './config.js';
 
+const loadedPlugins = [];
+
+async function loadPlugins() {
+    const pluginsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'plugins');
+    
+    if (!fs.existsSync(pluginsDir)) {
+        console.log('📁 مجلد plugins غير موجود');
+        return;
+    }
+    
+    const pluginFiles = fs.readdirSync(pluginsDir).filter(file => file.endsWith('.js'));
+    
+    for (const file of pluginFiles) {
+        try {
+            const pluginPath = path.join(pluginsDir, file);
+            const plugin = await import(`file://${pluginPath}`);
+            
+            if (plugin.default && plugin.default.patterns && plugin.default.handler) {
+                loadedPlugins.push(plugin.default);
+                console.log(`✅ Plugin تحمّل: ${plugin.default.name || file}`);
+            }
+        } catch (error) {
+            console.error(`❌ فشل تحميل plugin ${file}:`, error.message);
+        }
+    }
+    
+    console.log(`📦 تحمّلو ${loadedPlugins.length} plugins`);
+}
+
+function extractUrl(text) {
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    const matches = text.match(urlRegex);
+    return matches ? matches[0] : null;
+}
+
+function findMatchingPlugin(url) {
+    for (const plugin of loadedPlugins) {
+        for (const pattern of plugin.patterns) {
+            if (pattern.test(url)) {
+                return plugin;
+            }
+        }
+    }
+    return null;
+}
+
+async function handlePluginUrl(sock, remoteJid, url, msg, senderPhone) {
+    const plugin = findMatchingPlugin(url);
+    
+    if (!plugin) {
+        return false;
+    }
+    
+    console.log(`🔌 Plugin يعالج: ${plugin.name} - ${url}`);
+    
+    const utils = {
+        poweredBy: config.developer.poweredBy,
+        react: async (sock, msg, emoji) => {
+            try {
+                await sock.sendMessage(remoteJid, { react: { text: emoji, key: msg.key } });
+            } catch (e) {}
+        }
+    };
+    
+    try {
+        await plugin.handler(sock, remoteJid, url, msg, utils);
+        return true;
+    } catch (error) {
+        console.error(`❌ خطأ في plugin ${plugin.name}:`, error.message);
+        return false;
+    }
+}
+
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 const suppressPatterns = [
@@ -1417,6 +1490,14 @@ async function handleMessage(sock, remoteJid, userId, senderPhone, text, msg, us
         return;
     }
 
+    const extractedUrl = extractUrl(text);
+    if (extractedUrl) {
+        const handled = await handlePluginUrl(sock, remoteJid, extractedUrl, msg, senderPhone);
+        if (handled) {
+            return;
+        }
+    }
+
     if (isNewUser && session.firstTime) {
         session.firstTime = false;
 
@@ -1998,6 +2079,7 @@ console.log('🚀 كنطلق البوت...\n');
 
 await initDatabase();
 await downloadBotProfileImage();
+await loadPlugins();
 
 connectToWhatsApp().catch(err => {
     console.error('❌ مشكل خطير:', err);
